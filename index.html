@@ -566,6 +566,13 @@ body {
   transform: translateX(-50%) translateY(0);
 }
 
+/* Role-based visibility */
+.admin-only { display: none !important; }
+body.role-admin .admin-only { display: initial !important; }
+body.role-admin .admin-only.admin-section { display: block !important; }
+body.role-admin .admin-only.admin-flex { display: flex !important; }
+body.role-admin .admin-only.btn { display: inline-block !important; }
+
 /* ===================== ADMIN DRAWER ===================== */
 .admin-drawer {
   position: fixed;
@@ -760,6 +767,17 @@ body {
 
 <!-- ==================== SETUP SCREEN ==================== -->
 <div id="setupScreen" class="screen">
+
+<!-- ==================== UNAUTHORIZED SCREEN ==================== -->
+<div id="unauthorizedScreen" class="screen" style="flex-direction:column; align-items:center; justify-content:center; gap:24px; text-align:center; padding:40px;">
+  <div style="font-size:64px; opacity:0.3;">&#128274;</div>
+  <h2 class="heading-display" style="font-size:24px;">Not Authorized</h2>
+  <p style="color:var(--text-secondary); max-width:400px;" id="unauthorizedMsg">Your account is not on the authorized users list for this ceremony. Ask an administrator to add your email to the Users tab in the spreadsheet.</p>
+  <p style="color:var(--text-muted); font-size:13px;" id="unauthorizedEmail"></p>
+  <button class="btn btn-outline" onclick="signOut()">Sign Out</button>
+</div>
+
+<!-- ==================== SETUP SCREEN (continued) ==================== -->
   <div class="setup-container">
     <h2 class="heading-display" style="text-align:center; font-size:28px;">Set Up Your Ceremony</h2>
 
@@ -813,7 +831,7 @@ body {
   <div class="ceremony-header">
     <span class="ceremony-school-name" id="ceremonySchoolName"></span>
     <div class="ceremony-header-right">
-      <button class="btn btn-ghost" onclick="openSettings()" title="Settings">&#9881;</button>
+      <button class="btn btn-ghost admin-only" onclick="openSettings()" title="Settings">&#9881;</button>
       <button class="btn btn-ghost" onclick="signOut()">Sign Out</button>
     </div>
   </div>
@@ -870,7 +888,7 @@ body {
         <h4>House Counts</h4>
         <div class="admin-counts" id="adminCounts"></div>
       </div>
-      <div class="admin-section">
+      <div class="admin-section admin-only">
         <h4>Ceremony Balance</h4>
         <div class="balance-slider-wrap">
           <span class="slider-icon" title="Pure chance">&#127922;</span>
@@ -878,7 +896,7 @@ body {
           <span class="slider-icon" title="Even distribution">&#9878;</span>
         </div>
       </div>
-      <div class="admin-section">
+      <div class="admin-section admin-only">
         <h4>Actions</h4>
         <div class="admin-links">
           <button class="btn btn-outline" onclick="openSheet()">Open Spreadsheet</button>
@@ -909,7 +927,11 @@ body {
     <div class="setup-section" style="margin-bottom:16px;">
       <h3>Spreadsheet</h3>
       <p style="font-size:13px; color:var(--text-secondary); margin-bottom:8px;" id="settingsSheetInfo"></p>
-      <button class="btn btn-danger" onclick="disconnectSheet()">Disconnect &amp; Reset</button>
+      <p style="font-size:13px; color:var(--text-secondary); margin-bottom:8px;">To manage authorized users, open the spreadsheet and edit the <strong>Users</strong> tab. Add emails with role <code>admin</code> or <code>sorter</code>.</p>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn btn-outline" onclick="openSheet()">Open Spreadsheet</button>
+        <button class="btn btn-danger" onclick="disconnectSheet()">Disconnect &amp; Reset</button>
+      </div>
     </div>
   </div>
 </div>
@@ -956,6 +978,8 @@ const state = {
   schoolLogoUrl: null,
   currentSort: null, // {name, number, house}
   ceremonyPhase: 'ready', // ready | input | spinning | result
+  userRole: null, // 'admin' | 'sorter' | null (unauthorized)
+  authorizedUsers: [], // [{email, role}]
 };
 
 // ============================================================
@@ -1024,6 +1048,8 @@ function signIn() {
 function signOut() {
   auth.signOut();
   state.accessToken = null;
+  state.userRole = null;
+  document.body.classList.remove('role-admin', 'role-sorter');
   sessionStorage.removeItem('sortingWheel_token');
 }
 
@@ -1120,7 +1146,7 @@ async function handleCreateNew() {
 
   showLoading('Creating your spreadsheet...');
   try {
-    // 1. Create spreadsheet with three tabs
+    // 1. Create spreadsheet with four tabs
     const sheetData = await sheetsRequest('', {
       method: 'POST',
       body: JSON.stringify({
@@ -1128,7 +1154,8 @@ async function handleCreateNew() {
         sheets: [
           { properties: { title: 'Config', index: 0 } },
           { properties: { title: 'Roster', index: 1 } },
-          { properties: { title: 'Counts', index: 2 } }
+          { properties: { title: 'Counts', index: 2 } },
+          { properties: { title: 'Users', index: 3 } }
         ]
       })
     });
@@ -1167,7 +1194,24 @@ async function handleCreateNew() {
       body: JSON.stringify({ values: countValues })
     });
 
-    // 5. Upload school logo if provided
+    // 5. Set up Users tab with creating user as admin + hardcoded admins
+    const usersValues = [
+      ['Email', 'Role'],
+      [state.user.email, 'admin'],
+    ];
+    // Add hardcoded admin emails if not already the creating user
+    const extraAdmins = ['jacob.v.wilson@gmail.com', 'jacob.wilson@sumnerk12.net'];
+    extraAdmins.forEach(email => {
+      if (email.toLowerCase() !== state.user.email.toLowerCase()) {
+        usersValues.push([email, 'admin']);
+      }
+    });
+    await sheetsRequest(`/${sheetId}/values/Users!A1:B${usersValues.length}?valueInputOption=USER_ENTERED`, {
+      method: 'PUT',
+      body: JSON.stringify({ values: usersValues })
+    });
+
+    // 6. Upload school logo if provided
     const logoFile = $('setupSchoolLogo').files[0];
     if (logoFile) {
       const url = await uploadToStorage(`logos/${sheetId}/school_logo`, logoFile);
@@ -1209,7 +1253,7 @@ async function handleConnect() {
     state.sheetId = id;
     localStorage.setItem('sortingWheel_sheetId', id);
     hideLoading();
-    await enterCeremony();
+    await enterCeremony(); // This will check Users tab authorization
   } catch (err) {
     hideLoading();
     showError('Could not connect: ' + err.message);
@@ -1259,6 +1303,39 @@ async function loadCounts() {
   });
 }
 
+async function loadUsers() {
+  try {
+    const data = await sheetsRequest(`/${state.sheetId}/values/Users!A2:B100`);
+    const rows = data.values || [];
+    state.authorizedUsers = rows
+      .filter(r => r[0] && r[0].trim())
+      .map(r => ({ email: r[0].trim().toLowerCase(), role: (r[1] || 'sorter').trim().toLowerCase() }));
+  } catch (err) {
+    // If Users tab doesn't exist (legacy sheet), allow all as sorters
+    console.warn('Users tab not found, allowing open access:', err);
+    state.authorizedUsers = [];
+  }
+
+  // Check current user's role
+  if (!state.user) { state.userRole = null; return; }
+  const email = state.user.email.toLowerCase();
+  const match = state.authorizedUsers.find(u => u.email === email);
+  if (match) {
+    state.userRole = match.role === 'admin' ? 'admin' : 'sorter';
+  } else if (state.authorizedUsers.length === 0) {
+    // No Users tab or empty = open access, default to sorter
+    state.userRole = 'sorter';
+  } else {
+    state.userRole = null; // Not authorized
+  }
+
+  // Apply role to body class for CSS gating
+  document.body.classList.remove('role-admin', 'role-sorter');
+  if (state.userRole) {
+    document.body.classList.add(`role-${state.userRole}`);
+  }
+}
+
 // ============================================================
 //  ENTER CEREMONY MODE
 // ============================================================
@@ -1266,6 +1343,16 @@ async function enterCeremony() {
   showLoading('Loading ceremony...');
   try {
     await loadConfig();
+    await loadUsers();
+
+    // Check authorization
+    if (!state.userRole) {
+      hideLoading();
+      $('unauthorizedEmail').textContent = `Signed in as: ${state.user.email}`;
+      showScreen('unauthorizedScreen');
+      return;
+    }
+
     await loadCounts();
 
     // Update UI with school info
