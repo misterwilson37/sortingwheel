@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sorting Wheel v1.2.9</title>
+<title>Sorting Wheel v1.3.0</title>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
@@ -970,12 +970,6 @@ body.show-probs .admin-count-card .count-prob { display: block; }
           <span class="logo-placeholder" id="ceremonyLogoBtnInner">&#9733;</span>
         </div>
         <span class="ceremony-tap-text">Tap to begin</span>
-        <div class="anim-picker">
-          <button class="anim-btn active" onclick="setAnimation('roller')" data-anim="roller">Roller</button>
-          <button class="anim-btn" onclick="setAnimation('wheel')" data-anim="wheel">Wheel</button>
-          <button class="anim-btn" onclick="setAnimation('shields')" data-anim="shields">Shields</button>
-          <button class="anim-btn" onclick="setAnimation('particles')" data-anim="particles">Particles</button>
-        </div>
       </div>
     </div>
 
@@ -1010,6 +1004,14 @@ body.show-probs .admin-count-card .count-prob { display: block; }
         <button class="btn btn-outline" onclick="cancelSort()">&#10007; Re-sort</button>
       </div>
     </div>
+  </div>
+
+  <!-- Animation Style Picker -->
+  <div class="anim-picker" id="animPicker" style="position:fixed; bottom:52px; left:50%; transform:translateX(-50%); z-index:10;">
+    <button class="anim-btn active" onclick="setAnimation('roller')" data-anim="roller">Roller</button>
+    <button class="anim-btn" onclick="setAnimation('wheel')" data-anim="wheel">Wheel</button>
+    <button class="anim-btn" onclick="setAnimation('shields')" data-anim="shields">Shields</button>
+    <button class="anim-btn" onclick="setAnimation('particles')" data-anim="particles">Particles</button>
   </div>
 
   <!-- Admin Drawer -->
@@ -1112,7 +1114,7 @@ body.show-probs .admin-count-card .count-prob { display: block; }
 // ============================================================
 //  CONFIG (loaded from config.js)
 // ============================================================
-const APP_VERSION = '1.2.9';
+const APP_VERSION = '1.3.0';
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 // ============================================================
@@ -1714,6 +1716,12 @@ async function enterCeremony() {
       showScreen('setupScreen');
       initSetupForm();
       showError('Spreadsheet not found. Please set up again.');
+    } else if (err.message.includes('permission') || err.message.includes('PERMISSION')) {
+      showError(
+        'You don\u2019t have access to this spreadsheet. '
+        + 'An admin needs to share the Google Sheet with your email address. '
+        + 'In the spreadsheet, click Share and add: ' + (state.user?.email || 'your email')
+      );
     } else {
       showError('Failed to load: ' + err.message);
     }
@@ -1734,6 +1742,8 @@ function setCeremonyPhase(phase) {
   }
   if (phase !== 'result') hide('resultState');
   $('colorWash').classList.remove('active');
+  // Show animation picker on ready/input, hide during spin/result
+  $('animPicker').style.display = (phase === 'ready' || phase === 'input') ? 'flex' : 'none';
 }
 
 function showInputs() {
@@ -2301,6 +2311,8 @@ const animations = {
 function animateWheel(targetIdx) {
   return new Promise(resolve => {
     const stage = $('animationStage');
+    stage.classList.add('visible');
+    stage.offsetHeight; // Force layout
     const size = Math.min(stage.offsetWidth || 500, 500);
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = size;
@@ -2310,48 +2322,70 @@ function animateWheel(targetIdx) {
     const ctx = canvas.getContext('2d');
     const n = state.houses.length;
     const segAngle = (2 * Math.PI) / n;
-    const cx = size / 2, cy = size / 2, radius = size / 2 - 12;
+    const cx = size / 2, cy = size / 2, radius = size / 2 - 20;
 
-    // Calculate landing angle: target segment centered at top (-PI/2)
-    const targetCenter = -(segAngle * targetIdx + segAngle / 2) - Math.PI / 2;
-    const totalRotation = targetCenter + (6 + Math.random() * 3) * 2 * Math.PI;
+    // Pointer is at the top (12 o'clock = 3PI/2 in canvas coords)
+    const pointerAngle = 3 * Math.PI / 2;
+
+    // Target segment center (unrotated)
+    const segCenter = segAngle * targetIdx + segAngle / 2;
+
+    // Jitter: land randomly within the middle 60% of the segment
+    const jitter = (Math.random() - 0.5) * segAngle * 0.6;
+
+    // Rotation needed to put target under pointer
+    let neededRotation = pointerAngle - segCenter - jitter;
+    while (neededRotation < 0) neededRotation += 2 * Math.PI;
+
+    // Add full spins for drama (always forward)
+    const fullSpins = Math.floor(7 + Math.random() * 3) * 2 * Math.PI;
+    const totalRotation = neededRotation + fullSpins;
 
     let startTime = null;
-    const duration = 6000 + Math.random() * 1000;
+    const duration = 6000 + Math.random() * 1500;
 
     function draw(rotation) {
       ctx.clearRect(0, 0, size, size);
-      // Outer ring
-      ctx.beginPath(); ctx.arc(cx, cy, radius + 4, 0, Math.PI * 2);
-      ctx.strokeStyle = '#c9a84c'; ctx.lineWidth = 3; ctx.stroke();
 
+      // Draw segments
       state.houses.forEach((h, i) => {
         const start = segAngle * i + rotation;
         const end = start + segAngle;
         ctx.beginPath(); ctx.moveTo(cx, cy);
         ctx.arc(cx, cy, radius, start, end); ctx.closePath();
         ctx.fillStyle = h.color; ctx.fill();
-        ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 2; ctx.stroke();
-        // Name
-        const ta = start + segAngle / 2;
-        const tr = radius * 0.62;
+        ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 2; ctx.stroke();
+
+        // House name text
+        const textAngle = start + segAngle / 2;
+        const textRadius = radius * 0.6;
         ctx.save();
-        ctx.translate(cx + Math.cos(ta) * tr, cy + Math.sin(ta) * tr);
-        ctx.rotate(ta + Math.PI / 2);
+        ctx.translate(cx + Math.cos(textAngle) * textRadius, cy + Math.sin(textAngle) * textRadius);
+        ctx.rotate(textAngle + Math.PI / 2);
         ctx.fillStyle = contrastText(h.color);
         ctx.font = `bold ${Math.max(14, radius / 8)}px Cinzel, serif`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText(h.name, 0, 0);
         ctx.restore();
       });
-      // Center circle
-      ctx.beginPath(); ctx.arc(cx, cy, 18, 0, Math.PI * 2);
+
+      // Outer ring
+      ctx.beginPath(); ctx.arc(cx, cy, radius + 2, 0, Math.PI * 2);
+      ctx.strokeStyle = '#c9a84c'; ctx.lineWidth = 3; ctx.stroke();
+
+      // Center hub
+      ctx.beginPath(); ctx.arc(cx, cy, 20, 0, Math.PI * 2);
       ctx.fillStyle = '#1a1a2e'; ctx.fill();
       ctx.strokeStyle = '#c9a84c'; ctx.lineWidth = 2; ctx.stroke();
-      // Pointer at top
+
+      // Pointer triangle at top — drawn ON TOP of wheel
       ctx.beginPath();
-      ctx.moveTo(cx, 4); ctx.lineTo(cx - 14, -10); ctx.lineTo(cx + 14, -10); ctx.closePath();
+      ctx.moveTo(cx, cy - radius + 18);
+      ctx.lineTo(cx - 16, cy - radius - 8);
+      ctx.lineTo(cx + 16, cy - radius - 8);
+      ctx.closePath();
       ctx.fillStyle = '#c9a84c'; ctx.fill();
+      ctx.strokeStyle = '#1a1a2e'; ctx.lineWidth = 2; ctx.stroke();
     }
 
     function frame(t) {
@@ -2633,6 +2667,6 @@ if (paramSheet && !state.sheetId) {
   localStorage.setItem('sortingWheel_sheetId', paramSheet);
 }
 </script>
-<!-- Sorting Wheel v1.2.9 -->
+<!-- Sorting Wheel v1.3.0 -->
 </body>
 </html>
