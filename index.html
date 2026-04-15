@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sorting Wheel v1.2.6</title>
+<title>Sorting Wheel v1.2.7</title>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
@@ -1112,7 +1112,7 @@ body.show-probs .admin-count-card .count-prob { display: block; }
 // ============================================================
 //  CONFIG (loaded from config.js)
 // ============================================================
-const APP_VERSION = '1.2.6';
+const APP_VERSION = '1.2.7';
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 // ============================================================
@@ -1220,28 +1220,9 @@ function recoverTokenFromSession() {
 }
 
 async function signIn() {
-  try {
-    const result = await auth.signInWithPopup(getGoogleProvider());
-    storeToken(result.credential.accessToken);
-    // onAuthStateChanged will fire and handle navigation
-  } catch (err) {
-    console.warn('Popup sign-in issue:', err.code);
-    if (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-popup-request'
-        || err.code === 'auth/internal-error') {
-      // Try redirect — works on managed Chromebooks
-      showLoading('Redirecting to Google sign-in...');
-      sessionStorage.setItem('sortingWheel_awaitingRedirect', 'true');
-      auth.signInWithRedirect(getGoogleProvider());
-    } else if (err.code === 'auth/popup-closed-by-user') {
-      // User closed it, do nothing
-    } else if (err.code === 'auth/unauthorized-domain') {
-      showError('This domain is not authorized in Firebase. Add it under Authentication \u2192 Settings \u2192 Authorized domains.');
-    } else if (err.code === 'auth/network-request-failed') {
-      showAuthBlockedError();
-    } else {
-      showError('Sign-in failed: ' + err.message);
-    }
-  }
+  showLoading('Redirecting to Google sign-in...');
+  sessionStorage.setItem('sortingWheel_awaitingRedirect', 'true');
+  auth.signInWithRedirect(getGoogleProvider());
 }
 
 function signOut() {
@@ -2626,6 +2607,6 @@ if (paramSheet && !state.sheetId) {
   localStorage.setItem('sortingWheel_sheetId', paramSheet);
 }
 </script>
-<!-- Sorting Wheel v1.2.6 -->
+<!-- Sorting Wheel v1.2.7 -->
 </body>
 </html>
