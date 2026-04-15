@@ -1,9 +1,9 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sorting Wheel v1.2.2</title>
+<title>Sorting Wheel v1.2.3</title>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
@@ -1112,7 +1112,7 @@ body.show-probs .admin-count-card .count-prob { display: block; }
 // ============================================================
 //  CONFIG (loaded from config.js)
 // ============================================================
-const APP_VERSION = '1.2.2';
+const APP_VERSION = '1.2.3';
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 // ============================================================
@@ -1181,7 +1181,7 @@ function contrastText(hex) {
 }
 
 // ============================================================
-//  AUTH
+//  AUTH — Popup with redirect fallback for managed browsers
 // ============================================================
 function getGoogleProvider() {
   const provider = new firebase.auth.GoogleAuthProvider();
@@ -1190,38 +1190,48 @@ function getGoogleProvider() {
   return provider;
 }
 
-function signIn() {
-  auth.signInWithPopup(getGoogleProvider()).then(result => {
-    state.accessToken = result.credential.accessToken;
-    state.tokenExpiry = Date.now() + 3500000; // ~58 min safety margin
-    sessionStorage.setItem('sortingWheel_token', state.accessToken);
-    sessionStorage.setItem('sortingWheel_tokenExpiry', state.tokenExpiry);
-  }).catch(err => {
-    console.error('Auth error:', err);
-    hideLoading();
-    if (err.code === 'auth/unauthorized-domain') {
-      showError('This domain is not authorized in Firebase. Add it under Authentication → Settings → Authorized domains.');
-    } else if (err.code === 'auth/popup-blocked') {
-      showError('Popup was blocked. Please allow popups for this site and try again.');
+function storeToken(accessToken) {
+  state.accessToken = accessToken;
+  state.tokenExpiry = Date.now() + 3500000; // ~58 min safety margin
+  sessionStorage.setItem('sortingWheel_token', accessToken);
+  sessionStorage.setItem('sortingWheel_tokenExpiry', String(state.tokenExpiry));
+}
+
+async function signIn() {
+  try {
+    const result = await auth.signInWithPopup(getGoogleProvider());
+    storeToken(result.credential.accessToken);
+  } catch (err) {
+    console.warn('Popup sign-in issue:', err.code);
+    if (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-popup-request'
+        || err.code === 'auth/internal-error') {
+      // Redirect approach — works on managed Chromebooks
+      showLoading('Redirecting to Google sign-in...');
+      auth.signInWithRedirect(getGoogleProvider());
     } else if (err.code === 'auth/popup-closed-by-user') {
-      // User closed the popup, do nothing
+      // User closed it intentionally, do nothing
+    } else if (err.code === 'auth/unauthorized-domain') {
+      showError('This domain is not authorized in Firebase. Add it under Authentication \u2192 Settings \u2192 Authorized domains.');
     } else {
       showError('Sign-in failed: ' + err.message);
     }
-  });
+  }
 }
 
 async function refreshAccessToken() {
-  // Re-authenticate silently to get a fresh Google OAuth token
   try {
     const result = await auth.signInWithPopup(getGoogleProvider());
-    state.accessToken = result.credential.accessToken;
-    state.tokenExpiry = Date.now() + 3500000;
-    sessionStorage.setItem('sortingWheel_token', state.accessToken);
-    sessionStorage.setItem('sortingWheel_tokenExpiry', state.tokenExpiry);
+    storeToken(result.credential.accessToken);
     return true;
   } catch (err) {
-    console.error('Token refresh failed:', err);
+    console.warn('Popup refresh failed:', err.code);
+    if (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-popup-request'
+        || err.code === 'auth/internal-error') {
+      sessionStorage.setItem('sortingWheel_needsToken', 'true');
+      showLoading('Redirecting to Google...');
+      auth.signInWithRedirect(getGoogleProvider());
+      return false; // Page will reload after redirect
+    }
     return false;
   }
 }
@@ -1240,9 +1250,33 @@ function signOut() {
   document.body.classList.remove('role-admin', 'role-sorter');
   sessionStorage.removeItem('sortingWheel_token');
   sessionStorage.removeItem('sortingWheel_tokenExpiry');
+  sessionStorage.removeItem('sortingWheel_needsToken');
 }
 
+// Handle redirect result BEFORE onAuthStateChanged fires
+let redirectHandled = false;
+auth.getRedirectResult().then(result => {
+  if (result && result.credential) {
+    console.log('Redirect sign-in successful');
+    storeToken(result.credential.accessToken);
+    sessionStorage.removeItem('sortingWheel_needsToken');
+  }
+  redirectHandled = true;
+}).catch(err => {
+  console.warn('getRedirectResult error (may be normal on first load):', err.code);
+  redirectHandled = true;
+});
+
 auth.onAuthStateChanged(async user => {
+  // Wait for redirect result to be processed first
+  if (!redirectHandled) {
+    await new Promise(resolve => {
+      const check = setInterval(() => {
+        if (redirectHandled) { clearInterval(check); resolve(); }
+      }, 50);
+    });
+  }
+
   state.user = user;
   if (user) {
     // Try to recover token from session
@@ -1250,15 +1284,17 @@ auth.onAuthStateChanged(async user => {
       state.accessToken = sessionStorage.getItem('sortingWheel_token');
       state.tokenExpiry = parseInt(sessionStorage.getItem('sortingWheel_tokenExpiry')) || 0;
     }
-    // If token is missing or likely expired, get a fresh one
+    // If token is missing or expired, get a fresh one
     if (!isTokenLikelyValid()) {
       showLoading('Reconnecting to Google...');
       const refreshed = await refreshAccessToken();
       hideLoading();
       if (!refreshed) {
-        // Popup was blocked or user cancelled — show login screen
-        showScreen('loginScreen');
-        $('loginSubtitle').textContent = 'Session expired — sign in to continue';
+        // Either redirecting (page will reload) or truly failed
+        if (!sessionStorage.getItem('sortingWheel_needsToken')) {
+          showScreen('loginScreen');
+          $('loginSubtitle').textContent = 'Session expired \u2014 sign in to continue';
+        }
         return;
       }
     }
@@ -1276,7 +1312,6 @@ auth.onAuthStateChanged(async user => {
 // Wrapper for authenticated Sheets API calls (with auto-retry on 401)
 async function sheetsRequest(path, options = {}, _retried = false) {
   if (!state.accessToken) {
-    // Try to refresh before giving up
     const refreshed = await refreshAccessToken();
     if (!refreshed) throw new Error('Not authenticated. Please sign in again.');
   }
@@ -1289,13 +1324,9 @@ async function sheetsRequest(path, options = {}, _retried = false) {
     }
   });
   if (resp.status === 401 && !_retried) {
-    // Token expired mid-session — try to refresh and retry once
     console.warn('401 received, attempting token refresh...');
     const refreshed = await refreshAccessToken();
-    if (refreshed) {
-      return sheetsRequest(path, options, true);
-    }
-    showError('Session expired. Please sign in again.');
+    if (refreshed) return sheetsRequest(path, options, true);
     signOut();
     throw new Error('Token expired');
   }
@@ -2469,14 +2500,27 @@ async function loadLogoManager() {
     items.forEach(({ ref: itemRef, url }) => {
       const isActive = active.has(url);
       const wrap = document.createElement('div');
+      wrap.className = 'logo-manager-item';
       wrap.style.cssText = 'position:relative; width:80px; height:80px;';
-      wrap.innerHTML = `
-        <div class="logo-picker-thumb" style="width:100%;height:100%;cursor:default;${isActive ? 'border-color:var(--accent-gold);' : ''}">
-          <img src="${url}" alt="">
-        </div>
-        ${isActive ? '<span style="position:absolute;bottom:2px;left:2px;font-size:9px;background:var(--accent-gold);color:#1a1a1a;padding:1px 5px;border-radius:3px;">In use</span>' : ''}
-        ${!isActive ? `<button onclick="deleteLogo(this, '${itemRef.fullPath}')" style="position:absolute;top:-6px;right:-6px;background:var(--danger);border:none;color:white;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;">&times;</button>` : ''}
-      `;
+
+      const thumb = document.createElement('div');
+      thumb.className = 'logo-picker-thumb';
+      thumb.style.cssText = `width:100%;height:100%;cursor:default;${isActive ? 'border-color:var(--accent-gold);' : ''}`;
+      thumb.innerHTML = `<img src="${url}" alt="">`;
+      wrap.appendChild(thumb);
+
+      if (isActive) {
+        const badge = document.createElement('span');
+        badge.style.cssText = 'position:absolute;bottom:2px;left:2px;font-size:9px;background:var(--accent-gold);color:#1a1a1a;padding:1px 5px;border-radius:3px;';
+        badge.textContent = 'In use';
+        wrap.appendChild(badge);
+      } else {
+        const delBtn = document.createElement('button');
+        delBtn.style.cssText = 'position:absolute;top:-6px;right:-6px;background:var(--danger);border:none;color:white;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;';
+        delBtn.innerHTML = '&times;';
+        delBtn.onclick = () => deleteLogo(wrap, itemRef.fullPath);
+        wrap.appendChild(delBtn);
+      }
       grid.appendChild(wrap);
     });
   } catch (err) {
@@ -2485,11 +2529,11 @@ async function loadLogoManager() {
   }
 }
 
-async function deleteLogo(btn, path) {
+async function deleteLogo(wrapEl, path) {
   if (!confirm('Delete this logo from storage?')) return;
   try {
     await storage.ref(path).delete();
-    btn.closest('div[style*="position:relative"]').remove();
+    wrapEl.remove();
     showToast('Logo deleted');
   } catch (err) {
     showError('Delete failed: ' + err.message);
@@ -2567,6 +2611,6 @@ if (paramSheet && !state.sheetId) {
   localStorage.setItem('sortingWheel_sheetId', paramSheet);
 }
 </script>
-<!-- Sorting Wheel v1.2.2 -->
+<!-- Sorting Wheel v1.2.3 -->
 </body>
 </html>
