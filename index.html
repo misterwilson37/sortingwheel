@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sorting Wheel</title>
+<title>Sorting Wheel 1.0.3</title>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
@@ -124,7 +124,7 @@ body {
   overflow: hidden;
   animation: pulse-glow 3s ease-in-out infinite;
 }
-.login-logo img { width: 100%; height: 100%; object-fit: cover; }
+.login-logo img { width: 100%; height: 100%; object-fit: contain; padding: 12px; }
 .login-logo-placeholder {
   font-family: 'Cinzel', serif;
   font-size: 42px;
@@ -335,7 +335,7 @@ body {
   transition: transform 0.3s;
 }
 .ceremony-logo-btn:hover { transform: scale(1.05); }
-.ceremony-logo-btn img { width: 100%; height: 100%; object-fit: cover; }
+.ceremony-logo-btn img { width: 100%; height: 100%; object-fit: contain; padding: 16px; }
 .ceremony-logo-btn .logo-placeholder {
   font-family: 'Cinzel', serif;
   font-size: 36px;
@@ -1359,6 +1359,24 @@ async function loadUsers() {
 }
 
 // ============================================================
+//  IMAGE PRELOADING
+// ============================================================
+function preloadImages() {
+  const urls = state.houses
+    .map(h => h.logoUrl)
+    .filter(Boolean);
+  if (state.schoolLogoUrl) urls.push(state.schoolLogoUrl);
+  if (urls.length === 0) return Promise.resolve();
+
+  return Promise.all(urls.map(url => new Promise(resolve => {
+    const img = new Image();
+    img.onload = resolve;
+    img.onerror = resolve; // Don't block on failed loads
+    img.src = url;
+  })));
+}
+
+// ============================================================
 //  ENTER CEREMONY MODE
 // ============================================================
 async function enterCeremony() {
@@ -1396,6 +1414,10 @@ async function enterCeremony() {
     $('loginSubtitle').textContent = 'Sign in to begin';
 
     updateCountsDisplay();
+
+    // Preload all house logos so they're cached for the roller animation
+    await preloadImages();
+
     setCeremonyPhase('ready');
     showScreen('ceremonyScreen');
     hideLoading();
@@ -1474,8 +1496,8 @@ function buildRollerStrip(targetIndex) {
   const cardHeight = $('rollerFrame').offsetHeight;
   strip.innerHTML = '';
 
-  // Build: 5 full random cycles + land on target
-  const cycles = 5;
+  // Build: 8 full random cycles + land on target
+  const cycles = 8;
   const totalCards = state.houses.length * cycles + targetIndex + 1;
   const cards = [];
 
@@ -1540,9 +1562,9 @@ function spinRoller(targetIndex) {
     // Force reflow
     strip.offsetHeight;
 
-    // Animate
-    const duration = 3500 + Math.random() * 1000; // 3.5-4.5s
-    strip.style.transition = `transform ${duration}ms cubic-bezier(0.08, 0.5, 0.1, 1)`;
+    // Animate — longer spin builds suspense
+    const duration = 5500 + Math.random() * 1500; // 5.5-7s
+    strip.style.transition = `transform ${duration}ms cubic-bezier(0.05, 0.4, 0.1, 1)`;
     strip.style.transform = `translateY(${targetY}px)`;
 
     setTimeout(() => resolve(), duration + 100);
