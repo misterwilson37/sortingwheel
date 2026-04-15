@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sorting Wheel v1.2.4</title>
+<title>Sorting Wheel v1.2.6</title>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
@@ -1112,7 +1112,7 @@ body.show-probs .admin-count-card .count-prob { display: block; }
 // ============================================================
 //  CONFIG (loaded from config.js)
 // ============================================================
-const APP_VERSION = '1.2.4';
+const APP_VERSION = '1.2.6';
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 // ============================================================
@@ -1181,8 +1181,14 @@ function contrastText(hex) {
 }
 
 // ============================================================
-//  AUTH — Popup with redirect fallback for managed browsers
+//  AUTH — Simple and loop-proof
 // ============================================================
+//  Principle: tokens only come from explicit user actions
+//  (clicking sign-in) or redirect results. onAuthStateChanged
+//  NEVER triggers a new auth flow. If the token is gone,
+//  the user clicks Sign In again. No silent refresh = no loops.
+// ============================================================
+
 function getGoogleProvider() {
   const provider = new firebase.auth.GoogleAuthProvider();
   provider.addScope('https://www.googleapis.com/auth/spreadsheets');
@@ -1192,54 +1198,50 @@ function getGoogleProvider() {
 
 function storeToken(accessToken) {
   state.accessToken = accessToken;
-  state.tokenExpiry = Date.now() + 3500000; // ~58 min safety margin
+  state.tokenExpiry = Date.now() + 3500000;
   sessionStorage.setItem('sortingWheel_token', accessToken);
   sessionStorage.setItem('sortingWheel_tokenExpiry', String(state.tokenExpiry));
-}
-
-async function signIn() {
-  try {
-    const result = await auth.signInWithPopup(getGoogleProvider());
-    storeToken(result.credential.accessToken);
-  } catch (err) {
-    console.warn('Popup sign-in issue:', err.code);
-    if (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-popup-request'
-        || err.code === 'auth/internal-error') {
-      // Redirect approach — works on managed Chromebooks
-      showLoading('Redirecting to Google sign-in...');
-      auth.signInWithRedirect(getGoogleProvider());
-    } else if (err.code === 'auth/popup-closed-by-user') {
-      // User closed it intentionally, do nothing
-    } else if (err.code === 'auth/unauthorized-domain') {
-      showError('This domain is not authorized in Firebase. Add it under Authentication \u2192 Settings \u2192 Authorized domains.');
-    } else {
-      showError('Sign-in failed: ' + err.message);
-    }
-  }
-}
-
-async function refreshAccessToken() {
-  try {
-    const result = await auth.signInWithPopup(getGoogleProvider());
-    storeToken(result.credential.accessToken);
-    return true;
-  } catch (err) {
-    console.warn('Popup refresh failed:', err.code);
-    if (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-popup-request'
-        || err.code === 'auth/internal-error') {
-      sessionStorage.setItem('sortingWheel_needsToken', 'true');
-      showLoading('Redirecting to Google...');
-      auth.signInWithRedirect(getGoogleProvider());
-      return false; // Page will reload after redirect
-    }
-    return false;
-  }
 }
 
 function isTokenLikelyValid() {
   if (!state.accessToken) return false;
   const expiry = parseInt(sessionStorage.getItem('sortingWheel_tokenExpiry')) || 0;
   return Date.now() < expiry;
+}
+
+function recoverTokenFromSession() {
+  if (!state.accessToken) {
+    const stored = sessionStorage.getItem('sortingWheel_token');
+    if (stored) {
+      state.accessToken = stored;
+      state.tokenExpiry = parseInt(sessionStorage.getItem('sortingWheel_tokenExpiry')) || 0;
+    }
+  }
+}
+
+async function signIn() {
+  try {
+    const result = await auth.signInWithPopup(getGoogleProvider());
+    storeToken(result.credential.accessToken);
+    // onAuthStateChanged will fire and handle navigation
+  } catch (err) {
+    console.warn('Popup sign-in issue:', err.code);
+    if (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-popup-request'
+        || err.code === 'auth/internal-error') {
+      // Try redirect — works on managed Chromebooks
+      showLoading('Redirecting to Google sign-in...');
+      sessionStorage.setItem('sortingWheel_awaitingRedirect', 'true');
+      auth.signInWithRedirect(getGoogleProvider());
+    } else if (err.code === 'auth/popup-closed-by-user') {
+      // User closed it, do nothing
+    } else if (err.code === 'auth/unauthorized-domain') {
+      showError('This domain is not authorized in Firebase. Add it under Authentication \u2192 Settings \u2192 Authorized domains.');
+    } else if (err.code === 'auth/network-request-failed') {
+      showAuthBlockedError();
+    } else {
+      showError('Sign-in failed: ' + err.message);
+    }
+  }
 }
 
 function signOut() {
@@ -1250,23 +1252,53 @@ function signOut() {
   document.body.classList.remove('role-admin', 'role-sorter');
   sessionStorage.removeItem('sortingWheel_token');
   sessionStorage.removeItem('sortingWheel_tokenExpiry');
-  sessionStorage.removeItem('sortingWheel_needsToken');
+  sessionStorage.removeItem('sortingWheel_awaitingRedirect');
 }
 
-// Handle redirect result BEFORE onAuthStateChanged fires
+async function showAuthBlockedError() {
+  hideLoading();
+  let reachable = false;
+  try {
+    await fetch('https://accounts.google.com/o/oauth2/auth', { method: 'HEAD', mode: 'no-cors' });
+    reachable = true;
+  } catch (e) { /* blocked */ }
+
+  if (!reachable) {
+    showError(
+      'Google sign-in is being blocked by your browser or network. '
+      + 'If using Brave, tap the shield icon and set Shields to Down for this site. '
+      + 'If using an ad blocker, disable it for this site. '
+      + 'School networks may need to whitelist accounts.google.com and categorizingcougar.firebaseapp.com.'
+    );
+  } else {
+    showError(
+      'Sign-in could not complete. Your browser may be blocking popups or third-party cookies. '
+      + 'Try: (1) allowing popups for this site, (2) disabling ad blockers, '
+      + 'or (3) using Safari or an unmanaged browser.'
+    );
+  }
+}
+
+// Step 1: Handle redirect result (runs once on page load)
 let redirectHandled = false;
 auth.getRedirectResult().then(result => {
   if (result && result.credential) {
     console.log('Redirect sign-in successful');
     storeToken(result.credential.accessToken);
-    sessionStorage.removeItem('sortingWheel_needsToken');
+  } else if (sessionStorage.getItem('sortingWheel_awaitingRedirect')) {
+    // We redirected but got no credential back — auth is blocked
+    console.warn('Redirect returned without credential — auth likely blocked');
+    showAuthBlockedError();
   }
+  sessionStorage.removeItem('sortingWheel_awaitingRedirect');
   redirectHandled = true;
 }).catch(err => {
-  console.warn('getRedirectResult error (may be normal on first load):', err.code);
+  console.warn('getRedirectResult error:', err.code);
+  sessionStorage.removeItem('sortingWheel_awaitingRedirect');
   redirectHandled = true;
 });
 
+// Step 2: React to auth state changes
 auth.onAuthStateChanged(async user => {
   // Wait for redirect result to be processed first
   if (!redirectHandled) {
@@ -1279,41 +1311,28 @@ auth.onAuthStateChanged(async user => {
 
   state.user = user;
   if (user) {
-    // Try to recover token from session
-    if (!state.accessToken) {
-      state.accessToken = sessionStorage.getItem('sortingWheel_token');
-      state.tokenExpiry = parseInt(sessionStorage.getItem('sortingWheel_tokenExpiry')) || 0;
-    }
-    // If token is missing or expired, get a fresh one
-    if (!isTokenLikelyValid()) {
-      showLoading('Reconnecting to Google...');
-      const refreshed = await refreshAccessToken();
-      hideLoading();
-      if (!refreshed) {
-        // Either redirecting (page will reload) or truly failed
-        if (!sessionStorage.getItem('sortingWheel_needsToken')) {
-          showScreen('loginScreen');
-          $('loginSubtitle').textContent = 'Session expired \u2014 sign in to continue';
-        }
-        return;
-      }
-    }
-    if (state.sheetId) {
+    recoverTokenFromSession();
+    if (isTokenLikelyValid() && state.sheetId) {
       await enterCeremony();
-    } else {
+    } else if (isTokenLikelyValid()) {
       showScreen('setupScreen');
       initSetupForm();
+    } else {
+      // User is recognized by Firebase but we have no Sheets token.
+      // Don't auto-refresh — just show login with a helpful message.
+      showScreen('loginScreen');
+      $('loginSubtitle').textContent = 'Sign in to connect to Google Sheets';
     }
   } else {
     showScreen('loginScreen');
+    $('loginSubtitle').textContent = 'Sign in to begin';
   }
 });
 
-// Wrapper for authenticated Sheets API calls (with auto-retry on 401)
-async function sheetsRequest(path, options = {}, _retried = false) {
+// Wrapper for authenticated Sheets API calls
+async function sheetsRequest(path, options = {}) {
   if (!state.accessToken) {
-    const refreshed = await refreshAccessToken();
-    if (!refreshed) throw new Error('Not authenticated. Please sign in again.');
+    throw new Error('Not authenticated. Please sign in again.');
   }
   const resp = await fetch(`${SHEETS_API}${path}`, {
     ...options,
@@ -1323,11 +1342,9 @@ async function sheetsRequest(path, options = {}, _retried = false) {
       ...(options.headers || {})
     }
   });
-  if (resp.status === 401 && !_retried) {
-    console.warn('401 received, attempting token refresh...');
-    const refreshed = await refreshAccessToken();
-    if (refreshed) return sheetsRequest(path, options, true);
-    signOut();
+  if (resp.status === 401) {
+    // Token expired — don't loop, just tell the user
+    showError('Session expired. Please sign out and sign in again.');
     throw new Error('Token expired');
   }
   if (!resp.ok) {
@@ -2609,6 +2626,6 @@ if (paramSheet && !state.sheetId) {
   localStorage.setItem('sortingWheel_sheetId', paramSheet);
 }
 </script>
-<!-- Sorting Wheel v1.2.4 -->
+<!-- Sorting Wheel v1.2.6 -->
 </body>
 </html>
