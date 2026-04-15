@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sorting Wheel v1.1.0</title>
+<title>Sorting Wheel v1.2.0</title>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
@@ -762,6 +762,57 @@ body.show-probs .admin-count-card .count-prob { display: block; }
 }
 .color-wash.active { opacity: 0.12; }
 
+/* Animation picker */
+.anim-picker { display: flex; gap: 6px; justify-content: center; margin-top: 8px; }
+.anim-btn {
+  background: var(--bg-card); border: 1px solid rgba(255,255,255,0.08); color: var(--text-muted);
+  padding: 5px 14px; border-radius: 6px; font-size: 12px; cursor: pointer; font-family: 'Outfit', sans-serif;
+  transition: all 0.2s;
+}
+.anim-btn:hover { border-color: rgba(201,168,76,0.3); color: var(--text-secondary); }
+.anim-btn.active { border-color: var(--accent-gold); color: var(--accent-gold); background: rgba(201,168,76,0.08); }
+
+/* Generic animation stage */
+.animation-stage {
+  display: none; align-items: center; justify-content: center;
+  width: 75vw; max-width: 700px; min-height: 300px;
+}
+.animation-stage.visible { display: flex; }
+.animation-stage canvas { border-radius: 16px; }
+
+/* Shield animation */
+.shield-row { display: flex; gap: 16px; align-items: center; justify-content: center; flex-wrap: wrap; }
+.shield-card {
+  width: 140px; height: 190px; border-radius: 14px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  border: 2px solid rgba(255,255,255,0.12); transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+.shield-card img { width: 60%; max-height: 55%; object-fit: contain; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.4)); }
+.shield-card .shield-initial {
+  font-family: 'Cinzel', serif; font-size: 54px; font-weight: 900;
+}
+.shield-card .shield-name { font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.04em; }
+.shield-eliminated { opacity: 0; transform: scale(0.4) rotateY(90deg); pointer-events: none; }
+.shield-winner { transform: scale(1.25); box-shadow: 0 0 50px rgba(201,168,76,0.4); border-color: var(--accent-gold); }
+
+/* Logo picker modal */
+.logo-picker-overlay {
+  position: fixed; inset: 0; background: rgba(11,11,24,0.92); z-index: 250;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.logo-picker {
+  background: var(--bg-card); border: 1px solid rgba(201,168,76,0.2); border-radius: 12px;
+  padding: 24px; max-width: 500px; width: 100%; max-height: 80vh; overflow-y: auto;
+}
+.logo-picker-grid { display: flex; flex-wrap: wrap; gap: 12px; min-height: 60px; }
+.logo-picker-thumb {
+  width: 80px; height: 80px; border-radius: 8px; overflow: hidden; cursor: pointer;
+  border: 2px solid rgba(255,255,255,0.1); transition: border-color 0.2s;
+}
+.logo-picker-thumb:hover { border-color: var(--accent-gold); }
+.logo-picker-thumb img { width: 100%; height: 100%; object-fit: contain; background: #fff; padding: 4px; }
+
 /* Loading overlay */
 .loading-overlay {
   position: fixed;
@@ -919,6 +970,12 @@ body.show-probs .admin-count-card .count-prob { display: block; }
           <span class="logo-placeholder" id="ceremonyLogoBtnInner">&#9733;</span>
         </div>
         <span class="ceremony-tap-text">Tap to begin</span>
+        <div class="anim-picker">
+          <button class="anim-btn active" onclick="setAnimation('roller')" data-anim="roller">Roller</button>
+          <button class="anim-btn" onclick="setAnimation('wheel')" data-anim="wheel">Wheel</button>
+          <button class="anim-btn" onclick="setAnimation('shields')" data-anim="shields">Shields</button>
+          <button class="anim-btn" onclick="setAnimation('particles')" data-anim="particles">Particles</button>
+        </div>
       </div>
     </div>
 
@@ -938,6 +995,9 @@ body.show-probs .admin-count-card .count-prob { display: block; }
         <div class="roller-strip" id="rollerStrip"></div>
       </div>
     </div>
+
+    <!-- Generic Animation Stage (wheel, shields, particles) -->
+    <div class="animation-stage" id="animationStage"></div>
 
     <!-- Result State -->
     <div class="ceremony-result" id="resultState">
@@ -998,7 +1058,7 @@ body.show-probs .admin-count-card .count-prob { display: block; }
     <div class="setup-section" style="margin-bottom:16px;">
       <h3>School Logo</h3>
       <div id="currentSchoolLogo" style="margin-bottom:12px;"></div>
-      <input type="file" id="settingsSchoolLogo" accept="image/*" class="input-field" style="padding:8px;" onchange="uploadSchoolLogo()">
+      <button class="btn btn-outline" onclick="pickSchoolLogo()" style="width:100%;">Choose / Upload Logo</button>
       <div style="display:flex; align-items:center; gap:12px; margin-top:12px;">
         <span style="font-size:13px; color:var(--text-secondary);">Logo Background</span>
         <div class="color-swatch"><input type="color" id="settingsLogoBg" value="#ffffff" onchange="updateLogoBg(this.value)"></div>
@@ -1038,7 +1098,7 @@ body.show-probs .admin-count-card .count-prob { display: block; }
 // ============================================================
 //  CONFIG (loaded from config.js)
 // ============================================================
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 // ============================================================
@@ -1057,6 +1117,7 @@ const state = {
   balanceSetting: 50,
   currentSort: null, // {name, number, house}
   ceremonyPhase: 'ready', // ready | input | spinning | result
+  animationType: 'roller', // roller | wheel | shields | particles
   userRole: null, // 'admin' | 'sorter' | null (unauthorized)
   authorizedUsers: [], // [{email, role}]
 };
@@ -1270,14 +1331,14 @@ async function handleCreateNew() {
     const schoolLogoFile = $('setupSchoolLogo').files[0];
     if (schoolLogoFile) {
       showLoading('Uploading school logo...');
-      schoolLogoUrl = await uploadToStorage(`logos/${sheetId}/school_logo`, schoolLogoFile);
+      schoolLogoUrl = await uploadToStorage(`logos/school_${Date.now()}`, schoolLogoFile);
     }
 
     // 3. Upload house logos if provided
     for (let i = 0; i < houses.length; i++) {
       if (houses[i].logoFile) {
         showLoading(`Uploading ${houses[i].name} logo...`);
-        houses[i].logoUrl = await uploadToStorage(`logos/${sheetId}/house_${i}`, houses[i].logoFile);
+        houses[i].logoUrl = await uploadToStorage(`logos/house_${i}_${Date.now()}`, houses[i].logoFile);
       } else {
         houses[i].logoUrl = '';
       }
@@ -1540,7 +1601,11 @@ function setCeremonyPhase(phase) {
   state.ceremonyPhase = phase;
   $('readyState').style.display = phase === 'ready' ? 'block' : 'none';
   if (phase !== 'input') hide('inputState');
-  if (phase !== 'spinning') $('rollerFrame').classList.remove('visible');
+  if (phase !== 'spinning') {
+    $('rollerFrame').classList.remove('visible');
+    $('animationStage').classList.remove('visible');
+    $('animationStage').innerHTML = '';
+  }
   if (phase !== 'result') hide('resultState');
   $('colorWash').classList.remove('active');
 }
@@ -1740,10 +1805,16 @@ async function startSort() {
 
   // Transition to spinning
   setCeremonyPhase('spinning');
-  $('rollerFrame').classList.add('visible');
 
-  // Spin!
-  await spinRoller(houseIdx);
+  // Run selected animation
+  if (state.animationType === 'roller') {
+    $('rollerFrame').classList.add('visible');
+    await spinRoller(houseIdx);
+  } else {
+    $('animationStage').classList.add('visible');
+    await animations[state.animationType](houseIdx);
+    $('animationStage').classList.remove('visible');
+  }
 
   // Reveal
   showResult(house, name);
@@ -1982,9 +2053,9 @@ function openSettings() {
       <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
         <div style="width:24px; height:24px; border-radius:4px; background:${h.color}; border:1px solid rgba(255,255,255,0.1);"></div>
         <strong>${h.name}</strong>
-        ${h.logoUrl ? '<span style="color:var(--success); font-size:12px;">✓ Uploaded</span>' : ''}
+        ${h.logoUrl ? '<span style="color:var(--success); font-size:12px;">✓ Set</span>' : ''}
       </div>
-      <input type="file" accept="image/*" class="input-field" style="padding:8px;" onchange="uploadHouseLogo(${i}, this)">
+      <button class="btn btn-outline" onclick="pickHouseLogo(${i})" style="width:100%; font-size:13px;">Choose / Upload Logo</button>
     `;
     housesDiv.appendChild(row);
   });
@@ -2024,55 +2095,30 @@ async function uploadToStorage(path, file) {
   return await snap.ref.getDownloadURL();
 }
 
-async function uploadSchoolLogo() {
-  const file = $('settingsSchoolLogo').files[0];
-  if (!file) return;
-  showLoading('Uploading logo...');
-  try {
-    const url = await uploadToStorage(`logos/${state.sheetId}/school_logo`, file);
-    state.schoolLogoUrl = url;
-
-    // Update sheet
-    await sheetsRequest(`/${state.sheetId}/values/Config!B4?valueInputOption=USER_ENTERED`, {
-      method: 'PUT',
-      body: JSON.stringify({ values: [[url]] })
-    });
-
-    // Update UI
-    $('ceremonyLogoBtn').innerHTML = `<img src="${url}" alt="School Logo">`;
-    $('loginLogo').innerHTML = `<img src="${url}" alt="">`;
-
-    hideLoading();
-    showToast('School logo updated!');
-    openSettings(); // Refresh modal
-  } catch (err) {
-    hideLoading();
-    showError('Upload failed: ' + err.message);
-  }
+async function pickSchoolLogo() {
+  const url = await showLogoPicker();
+  if (!url) return;
+  state.schoolLogoUrl = url;
+  await sheetsRequest(`/${state.sheetId}/values/Config!B4?valueInputOption=USER_ENTERED`, {
+    method: 'PUT',
+    body: JSON.stringify({ values: [[url]] })
+  });
+  $('ceremonyLogoBtn').innerHTML = `<img src="${url}" alt="School Logo">`;
+  $('loginLogo').innerHTML = `<img src="${url}" alt="">`;
+  showToast('School logo updated!');
+  openSettings();
 }
 
-async function uploadHouseLogo(index, input) {
-  const file = input.files[0];
-  if (!file) return;
-  showLoading('Uploading logo...');
-  try {
-    const house = state.houses[index];
-    const url = await uploadToStorage(`logos/${state.sheetId}/house_${index}`, file);
-    house.logoUrl = url;
-
-    // Update sheet (house logos are in column C, starting at row 7)
-    await sheetsRequest(`/${state.sheetId}/values/Config!C${9 + index}?valueInputOption=USER_ENTERED`, {
-      method: 'PUT',
-      body: JSON.stringify({ values: [[url]] })
-    });
-
-    hideLoading();
-    showToast(`${house.name} logo updated!`);
-    openSettings(); // Refresh modal
-  } catch (err) {
-    hideLoading();
-    showError('Upload failed: ' + err.message);
-  }
+async function pickHouseLogo(index) {
+  const url = await showLogoPicker();
+  if (!url) return;
+  state.houses[index].logoUrl = url;
+  await sheetsRequest(`/${state.sheetId}/values/Config!C${9 + index}?valueInputOption=USER_ENTERED`, {
+    method: 'PUT',
+    body: JSON.stringify({ values: [[url]] })
+  });
+  showToast(`${state.houses[index].name} logo updated!`);
+  openSettings();
 }
 
 function disconnectSheet() {
@@ -2084,6 +2130,274 @@ function disconnectSheet() {
   closeSettings();
   showScreen('setupScreen');
   initSetupForm();
+}
+
+// ============================================================
+//  ANIMATION SELECTOR
+// ============================================================
+function setAnimation(type) {
+  state.animationType = type;
+  document.querySelectorAll('.anim-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.anim === type);
+  });
+}
+
+// ============================================================
+//  ANIMATIONS — Wheel Spin, Shield Elimination, Particle Vortex
+// ============================================================
+const animations = {
+  wheel: animateWheel,
+  shields: animateShields,
+  particles: animateParticles
+};
+
+function animateWheel(targetIdx) {
+  return new Promise(resolve => {
+    const stage = $('animationStage');
+    const size = Math.min(stage.offsetWidth || 500, 500);
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    canvas.style.cssText = `width:${size}px; height:${size}px;`;
+    stage.innerHTML = '';
+    stage.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+    const n = state.houses.length;
+    const segAngle = (2 * Math.PI) / n;
+    const cx = size / 2, cy = size / 2, radius = size / 2 - 12;
+
+    // Calculate landing angle: target segment centered at top (-PI/2)
+    const targetCenter = -(segAngle * targetIdx + segAngle / 2) - Math.PI / 2;
+    const totalRotation = targetCenter + (6 + Math.random() * 3) * 2 * Math.PI;
+
+    let startTime = null;
+    const duration = 6000 + Math.random() * 1000;
+
+    function draw(rotation) {
+      ctx.clearRect(0, 0, size, size);
+      // Outer ring
+      ctx.beginPath(); ctx.arc(cx, cy, radius + 4, 0, Math.PI * 2);
+      ctx.strokeStyle = '#c9a84c'; ctx.lineWidth = 3; ctx.stroke();
+
+      state.houses.forEach((h, i) => {
+        const start = segAngle * i + rotation;
+        const end = start + segAngle;
+        ctx.beginPath(); ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, radius, start, end); ctx.closePath();
+        ctx.fillStyle = h.color; ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 2; ctx.stroke();
+        // Name
+        const ta = start + segAngle / 2;
+        const tr = radius * 0.62;
+        ctx.save();
+        ctx.translate(cx + Math.cos(ta) * tr, cy + Math.sin(ta) * tr);
+        ctx.rotate(ta + Math.PI / 2);
+        ctx.fillStyle = contrastText(h.color);
+        ctx.font = `bold ${Math.max(14, radius / 8)}px Cinzel, serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(h.name, 0, 0);
+        ctx.restore();
+      });
+      // Center circle
+      ctx.beginPath(); ctx.arc(cx, cy, 18, 0, Math.PI * 2);
+      ctx.fillStyle = '#1a1a2e'; ctx.fill();
+      ctx.strokeStyle = '#c9a84c'; ctx.lineWidth = 2; ctx.stroke();
+      // Pointer at top
+      ctx.beginPath();
+      ctx.moveTo(cx, 4); ctx.lineTo(cx - 14, -10); ctx.lineTo(cx + 14, -10); ctx.closePath();
+      ctx.fillStyle = '#c9a84c'; ctx.fill();
+    }
+
+    function frame(t) {
+      if (!startTime) startTime = t;
+      const progress = Math.min((t - startTime) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3.5);
+      draw(totalRotation * eased);
+      if (progress < 1) requestAnimationFrame(frame);
+      else setTimeout(resolve, 400);
+    }
+    requestAnimationFrame(frame);
+  });
+}
+
+function animateShields(targetIdx) {
+  return new Promise(resolve => {
+    const stage = $('animationStage');
+    stage.innerHTML = '<div class="shield-row" id="shieldRow"></div>';
+    const row = $('shieldRow');
+
+    const cards = state.houses.map((h, i) => {
+      const card = document.createElement('div');
+      card.className = 'shield-card';
+      card.style.background = `linear-gradient(135deg, ${h.color}, ${adjustColor(h.color, -30)})`;
+      card.style.color = contrastText(h.color);
+      const inner = h.logoUrl
+        ? `<img src="${h.logoUrl}" alt="${h.name}">`
+        : `<span class="shield-initial">${h.name.charAt(0)}</span>`;
+      card.innerHTML = `${inner}<span class="shield-name">${h.name}</span>`;
+      row.appendChild(card);
+      return card;
+    });
+
+    // Build elimination order (shuffled losers)
+    const losers = state.houses.map((_, i) => i).filter(i => i !== targetIdx);
+    for (let i = losers.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [losers[i], losers[j]] = [losers[j], losers[i]];
+    }
+
+    let delay = 1500;
+    losers.forEach((idx, step) => {
+      setTimeout(() => cards[idx].classList.add('shield-eliminated'), delay);
+      delay += 1200 + step * 400;
+    });
+
+    setTimeout(() => {
+      cards[targetIdx].classList.add('shield-winner');
+      setTimeout(resolve, 900);
+    }, delay + 600);
+  });
+}
+
+function animateParticles(targetIdx) {
+  return new Promise(resolve => {
+    const stage = $('animationStage');
+    const size = Math.min(stage.offsetWidth || 500, 500);
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    canvas.style.cssText = `width:${size}px; height:${size}px;`;
+    stage.innerHTML = '';
+    stage.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+    const cx = size / 2, cy = size / 2;
+
+    const particles = [];
+    state.houses.forEach((h, i) => {
+      for (let j = 0; j < 50; j++) {
+        const angle = Math.random() * Math.PI * 2;
+        const dist = 40 + Math.random() * (size / 2 - 50);
+        particles.push({
+          house: i, color: h.color,
+          angle, dist, origDist: dist,
+          size: 2.5 + Math.random() * 4,
+          speed: 0.015 + Math.random() * 0.025,
+          alpha: 1
+        });
+      }
+    });
+
+    const duration = 6000;
+    let startTime = null;
+
+    function frame(t) {
+      if (!startTime) startTime = t;
+      const progress = (t - startTime) / duration;
+      ctx.clearRect(0, 0, size, size);
+
+      particles.forEach(p => {
+        p.angle += p.speed * (1 + (1 - Math.min(progress, 1)) * 2);
+
+        // Phase 1 (0–0.35): swirl
+        // Phase 2 (0.35–0.65): losers fade
+        if (progress > 0.35 && p.house !== targetIdx) {
+          p.alpha = Math.max(0, 1 - (progress - 0.35) / 0.3);
+          p.size *= 0.998;
+        }
+        // Phase 3 (0.55–1.0): winner coalesces
+        if (progress > 0.55 && p.house === targetIdx) {
+          const t2 = Math.min((progress - 0.55) / 0.45, 1);
+          p.dist = p.origDist * (1 - t2 * 0.75);
+          p.size = Math.min(p.size * 1.001, 10);
+        }
+
+        const x = cx + Math.cos(p.angle) * p.dist;
+        const y = cy + Math.sin(p.angle) * p.dist;
+
+        if (p.alpha > 0.01) {
+          ctx.beginPath();
+          ctx.arc(x, y, p.size, 0, Math.PI * 2);
+          ctx.globalAlpha = p.alpha;
+          ctx.fillStyle = p.color;
+          ctx.fill();
+        }
+      });
+
+      // Draw winner label in center during phase 3
+      if (progress > 0.8) {
+        const fadeIn = Math.min((progress - 0.8) / 0.15, 1);
+        ctx.globalAlpha = fadeIn;
+        ctx.fillStyle = contrastText('#0f0f1a');
+        ctx.font = `bold ${size / 12}px Cinzel, serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(state.houses[targetIdx].name, cx, cy);
+      }
+
+      ctx.globalAlpha = 1;
+      if (progress < 1) requestAnimationFrame(frame);
+      else setTimeout(resolve, 400);
+    }
+    requestAnimationFrame(frame);
+  });
+}
+
+// ============================================================
+//  LOGO LIBRARY — Persistent across sheets
+// ============================================================
+function showLogoPicker() {
+  return new Promise(async (resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'logo-picker-overlay';
+    overlay.innerHTML = `<div class="logo-picker">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <h3 class="heading-display" style="font-size:18px;">Choose Logo</h3>
+        <button class="btn btn-ghost" id="logoPickerClose" style="font-size:20px;">&times;</button>
+      </div>
+      <div class="logo-picker-grid" id="logoPickerGrid"><div class="spinner" style="margin:20px auto;"></div></div>
+      <div style="margin-top:16px;border-top:1px solid rgba(255,255,255,0.1);padding-top:16px;">
+        <label style="font-size:13px;color:var(--text-secondary);">Upload new:</label>
+        <input type="file" accept="image/*" id="logoPickerUpload" class="input-field" style="padding:8px;margin-top:8px;">
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+
+    const close = () => { overlay.remove(); resolve(null); };
+    overlay.querySelector('#logoPickerClose').onclick = close;
+    overlay.onclick = e => { if (e.target === overlay) close(); };
+
+    // Load all logos from storage
+    try {
+      const result = await storage.ref('logos').listAll();
+      const grid = overlay.querySelector('#logoPickerGrid');
+      grid.innerHTML = '';
+      if (result.items.length === 0) {
+        grid.innerHTML = '<span style="color:var(--text-muted);font-size:13px;">No logos uploaded yet. Use the upload below.</span>';
+      }
+      for (const item of result.items) {
+        const url = await item.getDownloadURL();
+        const thumb = document.createElement('div');
+        thumb.className = 'logo-picker-thumb';
+        thumb.innerHTML = `<img src="${url}" alt="">`;
+        thumb.onclick = () => { overlay.remove(); resolve(url); };
+        grid.appendChild(thumb);
+      }
+    } catch (err) {
+      console.error('Logo list error:', err);
+      overlay.querySelector('#logoPickerGrid').innerHTML = '<span style="color:var(--text-muted);font-size:13px;">Could not load logos.</span>';
+    }
+
+    // Handle new upload
+    overlay.querySelector('#logoPickerUpload').onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      showLoading('Uploading...');
+      try {
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '');
+        const url = await uploadToStorage(`logos/${Date.now()}_${safeName}`, file);
+        hideLoading();
+        overlay.remove();
+        resolve(url);
+      } catch (err) { hideLoading(); showError('Upload failed: ' + err.message); }
+    };
+  });
 }
 
 // ============================================================
@@ -2100,6 +2414,6 @@ if (paramSheet && !state.sheetId) {
   localStorage.setItem('sortingWheel_sheetId', paramSheet);
 }
 </script>
-<!-- Sorting Wheel v1.1.0 -->
+<!-- Sorting Wheel v1.2.0 -->
 </body>
 </html>
