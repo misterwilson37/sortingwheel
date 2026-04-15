@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sorting Wheel v1.2.3</title>
+<title>Sorting Wheel v1.2.4</title>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
@@ -1112,7 +1112,7 @@ body.show-probs .admin-count-card .count-prob { display: block; }
 // ============================================================
 //  CONFIG (loaded from config.js)
 // ============================================================
-const APP_VERSION = '1.2.3';
+const APP_VERSION = '1.2.4';
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 // ============================================================
@@ -2518,7 +2518,16 @@ async function loadLogoManager() {
         const delBtn = document.createElement('button');
         delBtn.style.cssText = 'position:absolute;top:-6px;right:-6px;background:var(--danger);border:none;color:white;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;';
         delBtn.innerHTML = '&times;';
-        delBtn.onclick = () => deleteLogo(wrap, itemRef.fullPath);
+        delBtn.onclick = async function() {
+          if (!confirm('Delete this logo from storage?')) return;
+          try {
+            await storage.ref(itemRef.fullPath).delete();
+            if (this.parentElement) this.parentElement.remove();
+            showToast('Logo deleted');
+          } catch (err) {
+            showError('Delete failed: ' + err.message);
+          }
+        };
         wrap.appendChild(delBtn);
       }
       grid.appendChild(wrap);
@@ -2526,17 +2535,6 @@ async function loadLogoManager() {
   } catch (err) {
     console.error('Logo manager error:', err);
     grid.innerHTML = '<span style="color:var(--text-muted); font-size:13px;">Could not load logos.</span>';
-  }
-}
-
-async function deleteLogo(wrapEl, path) {
-  if (!confirm('Delete this logo from storage?')) return;
-  try {
-    await storage.ref(path).delete();
-    wrapEl.remove();
-    showToast('Logo deleted');
-  } catch (err) {
-    showError('Delete failed: ' + err.message);
   }
 }
 
@@ -2611,6 +2609,6 @@ if (paramSheet && !state.sheetId) {
   localStorage.setItem('sortingWheel_sheetId', paramSheet);
 }
 </script>
-<!-- Sorting Wheel v1.2.3 -->
+<!-- Sorting Wheel v1.2.4 -->
 </body>
 </html>
