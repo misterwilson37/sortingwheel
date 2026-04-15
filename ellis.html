@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sorting Wheel — Connecting...</title>
+<style>
+  body {
+    margin: 0; height: 100vh; display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 16px; font-family: system-ui, sans-serif;
+    background: #0b0b18; color: #f0e6d3;
+  }
+  .spinner { width: 36px; height: 36px; border: 3px solid rgba(201,168,76,0.2); border-top-color: #c9a84c; border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  a { color: #c9a84c; }
+</style>
+<script>
+// ============================================================
+//  SORTING WHEEL — Quick Redirect
+// ============================================================
+//  This page forwards to the Sorting Wheel app with the correct
+//  sheet ID pre-loaded. Drop this in your repo alongside index.html.
+//
+//  SETUP: Replace the SHEET_ID below with your spreadsheet ID.
+//  Find it in the URL when you open your Google Sheet:
+//  https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID_HERE/edit
+//
+//  Usage:
+//    sortingwheel.misterwilson.org/go.html
+//      → Redirects using the default SHEET_ID below
+//
+//    sortingwheel.misterwilson.org/go.html?sheet=SOME_OTHER_ID
+//      → Redirects using the provided sheet ID (overrides default)
+// ============================================================
+
+const DEFAULT_SHEET_ID = '1rYZ71el1yPjo1X7F71nI8WQ9LvCqY4g7r-iXr5IYQqE';
+
+const params = new URLSearchParams(window.location.search);
+const sheetId = params.get('sheet') || DEFAULT_SHEET_ID;
+
+if (sheetId && sheetId !== 'PASTE_YOUR_SHEET_ID_HERE') {
+  window.location.replace(`./index.html?sheet=${sheetId}`);
+} else {
+  document.getElementById('msg').innerHTML = `
+    <p>No sheet ID configured.</p>
+    <p style="font-size:14px; opacity:0.6;">
+      Edit <code>go.html</code> and replace <code>PASTE_YOUR_SHEET_ID_HERE</code><br>
+      with your Google Spreadsheet ID, or visit:<br>
+      <a href="./index.html">sortingwheel.misterwilson.org</a> to set up.
+    </p>
+  `;
+}
+</script>
+</head>
+<body>
+  <div class="spinner"></div>
+  <div id="msg" style="text-align:center;">Connecting to your Sorting Wheel...</div>
+</body>
+</html>
