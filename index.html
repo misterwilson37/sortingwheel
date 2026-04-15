@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sorting Wheel v1.0.5</title>
+<title>Sorting Wheel v1.0.6</title>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
@@ -304,9 +304,44 @@ body {
 }
 .ceremony-header-right {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   align-items: center;
 }
+
+.header-user-name {
+  font-size: 13px;
+  color: var(--text-secondary);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-badge {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-weight: 600;
+  border: 1px solid;
+}
+.role-badge-admin {
+  color: var(--accent-gold);
+  border-color: var(--accent-gold-dark);
+  background: rgba(201,168,76,0.1);
+  cursor: pointer;
+}
+.role-badge-admin:hover { background: rgba(201,168,76,0.2); }
+.role-badge-sorter {
+  color: var(--text-muted);
+  border-color: var(--text-muted);
+  background: rgba(255,255,255,0.03);
+}
+.role-badge-sorter.clickable {
+  cursor: pointer;
+}
+.role-badge-sorter.clickable:hover { background: rgba(255,255,255,0.06); }
 
 .ceremony-stage {
   display: flex;
@@ -575,19 +610,6 @@ body.role-admin .admin-only.admin-col { display: flex !important; }
 body.role-admin .admin-only.admin-flex { display: flex !important; }
 body.role-admin .admin-only.btn { display: inline-block !important; }
 
-/* Probability bars */
-.prob-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-  font-size: 12px;
-}
-.prob-label { min-width: 70px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.prob-bar-track { flex: 1; height: 14px; background: rgba(255,255,255,0.05); border-radius: 3px; overflow: hidden; }
-.prob-bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s ease; }
-.prob-pct { min-width: 42px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
-
 /* ===================== ADMIN DRAWER ===================== */
 .admin-drawer {
   position: fixed;
@@ -659,6 +681,25 @@ body.role-admin .admin-only.btn { display: inline-block !important; }
   margin-top: 4px;
   opacity: 0.7;
 }
+.admin-count-card .count-prob {
+  display: none;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.admin-count-card .count-prob .prob-bar-track {
+  height: 5px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 3px;
+}
+.admin-count-card .count-prob .prob-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+body.show-probs .admin-count-card .count-prob { display: block; }
 
 .admin-section {
   min-width: 0;
@@ -859,6 +900,8 @@ body.role-admin .admin-only.btn { display: inline-block !important; }
   <div class="ceremony-header">
     <span class="ceremony-school-name" id="ceremonySchoolName"></span>
     <div class="ceremony-header-right">
+      <span class="header-user-name" id="headerUserName"></span>
+      <span class="role-badge" id="headerRoleBadge" onclick="toggleRoleView()"></span>
       <button class="btn btn-ghost admin-only" onclick="openSettings()" title="Settings">&#9881;</button>
       <button class="btn btn-ghost" onclick="signOut()">Sign Out</button>
     </div>
@@ -917,9 +960,6 @@ body.role-admin .admin-only.btn { display: inline-block !important; }
         <div class="admin-section">
           <h4>House Counts</h4>
           <div class="admin-counts" id="adminCounts"></div>
-        </div>
-        <div class="admin-section" id="probSection" style="display:none;">
-          <div id="probBars"></div>
         </div>
       </div>
       <div class="admin-col admin-col-right admin-only">
@@ -994,7 +1034,7 @@ body.role-admin .admin-only.btn { display: inline-block !important; }
 // ============================================================
 //  CONFIG (loaded from config.js)
 // ============================================================
-const APP_VERSION = '1.0.5';
+const APP_VERSION = '1.0.6';
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 // ============================================================
@@ -1459,6 +1499,7 @@ async function enterCeremony() {
     $('loginSubtitle').textContent = 'Sign in to begin';
 
     updateCountsDisplay();
+    applyRole();
 
     // Preload all house logos so they're cached for the roller animation
     await preloadImages();
@@ -1745,6 +1786,55 @@ document.addEventListener('keydown', e => {
 });
 
 // ============================================================
+//  ROLE DISPLAY & TOGGLE
+// ============================================================
+let trueRole = null; // The user's actual role from the Users tab
+let viewingAs = null; // What they're currently viewing as (for admin preview)
+
+function updateHeaderRole() {
+  const badge = $('headerRoleBadge');
+  const userName = $('headerUserName');
+  if (state.user) {
+    userName.textContent = state.user.displayName || state.user.email.split('@')[0];
+  }
+  if (viewingAs === 'admin') {
+    badge.className = 'role-badge role-badge-admin';
+    badge.textContent = 'Admin';
+    badge.title = 'Click to preview sorter view';
+  } else if (trueRole === 'admin') {
+    // Admin viewing as sorter
+    badge.className = 'role-badge role-badge-sorter clickable';
+    badge.textContent = 'Sorter';
+    badge.title = 'Click to return to admin view';
+  } else {
+    badge.className = 'role-badge role-badge-sorter';
+    badge.textContent = 'Sorter';
+    badge.title = '';
+  }
+}
+
+function toggleRoleView() {
+  if (trueRole !== 'admin') return; // Only admins can toggle
+  if (viewingAs === 'admin') {
+    viewingAs = 'sorter';
+    document.body.classList.remove('role-admin');
+    document.body.classList.add('role-sorter');
+    document.body.classList.remove('show-probs');
+  } else {
+    viewingAs = 'admin';
+    document.body.classList.remove('role-sorter');
+    document.body.classList.add('role-admin');
+  }
+  updateHeaderRole();
+}
+
+function applyRole() {
+  trueRole = state.userRole;
+  viewingAs = state.userRole;
+  updateHeaderRole();
+}
+
+// ============================================================
 //  ADMIN DRAWER
 // ============================================================
 function toggleAdmin() {
@@ -1752,12 +1842,9 @@ function toggleAdmin() {
 }
 
 function toggleProbabilities() {
-  const panel = $('probSection');
-  const btn = $('probToggleBtn');
-  const isHidden = panel.style.display === 'none';
-  panel.style.display = isHidden ? 'block' : 'none';
-  btn.textContent = isHidden ? 'Hide Probabilities' : 'Show Probabilities';
-  if (isHidden) updateProbabilities();
+  const showing = document.body.classList.toggle('show-probs');
+  $('probToggleBtn').textContent = showing ? 'Hide Probabilities' : 'Show Probabilities';
+  if (showing) updateProbabilities();
 }
 
 function calculateProbabilities() {
@@ -1776,32 +1863,15 @@ function calculateProbabilities() {
 }
 
 function updateProbabilities() {
-  if ($('probSection').style.display === 'none') return;
+  if (!document.body.classList.contains('show-probs')) return;
   const probs = calculateProbabilities();
-  const container = $('probBars');
-  container.innerHTML = '';
-
   const maxProb = Math.max(...probs);
 
-  state.houses.forEach((h, i) => {
-    const pct = (probs[i] * 100).toFixed(1);
-    const barWidth = maxProb > 0 ? (probs[i] / maxProb * 100) : 0;
-
-    const hex = h.color.replace('#','');
-    const r = parseInt(hex.slice(0,2),16), g = parseInt(hex.slice(2,4),16), b = parseInt(hex.slice(4,6),16);
-    const lum = r*0.299 + g*0.587 + b*0.114;
-    const barColor = lum < 80 ? '#9a9a9a' : h.color;
-
-    const row = document.createElement('div');
-    row.className = 'prob-row';
-    row.innerHTML = `
-      <span class="prob-label">${h.name}</span>
-      <div class="prob-bar-track">
-        <div class="prob-bar-fill" style="width:${barWidth}%; background:${barColor};"></div>
-      </div>
-      <span class="prob-pct">${pct}%</span>
-    `;
-    container.appendChild(row);
+  probs.forEach((p, i) => {
+    const bar = document.querySelector(`.prob-bar-fill[data-house="${i}"]`);
+    const label = document.querySelector(`.prob-pct-label[data-house="${i}"]`);
+    if (bar) bar.style.width = (maxProb > 0 ? (p / maxProb * 100) : 0) + '%';
+    if (label) label.textContent = (p * 100).toFixed(1) + '%';
   });
 }
 
@@ -1813,14 +1883,17 @@ function updateCountsDisplay() {
     card.className = 'admin-count-card';
     card.style.background = h.color + '22';
     card.style.borderColor = h.color + '44';
-    // For the count number, use the house color but ensure readability on dark bg
-    // Very dark colors (#2C2C2C, black) → use white; very light (#DEDEDE, white) → use that light color
     const hex = h.color.replace('#','');
     const r = parseInt(hex.slice(0,2),16), g = parseInt(hex.slice(2,4),16), b = parseInt(hex.slice(4,6),16);
     const lum = r*0.299 + g*0.587 + b*0.114;
     const numColor = lum < 80 ? '#e0e0e0' : (lum > 200 ? '#d0d0d0' : h.color);
+    const barColor = lum < 80 ? '#9a9a9a' : h.color;
     card.innerHTML = `<div class="count-num" style="color:${numColor}">${state.counts[i] || 0}</div>
-      <div class="count-label">${h.name}</div>`;
+      <div class="count-label">${h.name}</div>
+      <div class="count-prob">
+        <div class="prob-bar-track"><div class="prob-bar-fill" data-house="${i}" style="width:0%; background:${barColor};"></div></div>
+        <span class="prob-pct-label" data-house="${i}" style="font-variant-numeric:tabular-nums;">—</span>
+      </div>`;
     container.appendChild(card);
   });
   updateProbabilities();
@@ -1983,5 +2056,6 @@ if (paramSheet && !state.sheetId) {
   localStorage.setItem('sortingWheel_sheetId', paramSheet);
 }
 </script>
+<!-- Sorting Wheel v1.0.6 -->
 </body>
 </html>
