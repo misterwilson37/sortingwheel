@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sorting Wheel v1.2.1</title>
+<title>Sorting Wheel v1.2.2</title>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
@@ -1112,7 +1112,7 @@ body.show-probs .admin-count-card .count-prob { display: block; }
 // ============================================================
 //  CONFIG (loaded from config.js)
 // ============================================================
-const APP_VERSION = '1.2.1';
+const APP_VERSION = '1.2.2';
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 // ============================================================
@@ -1121,6 +1121,7 @@ const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 const state = {
   user: null,
   accessToken: null,
+  tokenExpiry: null,
   sheetId: localStorage.getItem('sortingWheel_sheetId') || null,
   houses: [],      // [{name, color, logoUrl}]
   counts: [],      // [number] parallel to houses
@@ -1182,29 +1183,63 @@ function contrastText(hex) {
 // ============================================================
 //  AUTH
 // ============================================================
-function signIn() {
+function getGoogleProvider() {
   const provider = new firebase.auth.GoogleAuthProvider();
   provider.addScope('https://www.googleapis.com/auth/spreadsheets');
   provider.addScope('https://www.googleapis.com/auth/drive.file');
-  auth.signInWithPopup(provider).then(result => {
+  return provider;
+}
+
+function signIn() {
+  auth.signInWithPopup(getGoogleProvider()).then(result => {
     state.accessToken = result.credential.accessToken;
+    state.tokenExpiry = Date.now() + 3500000; // ~58 min safety margin
     sessionStorage.setItem('sortingWheel_token', state.accessToken);
+    sessionStorage.setItem('sortingWheel_tokenExpiry', state.tokenExpiry);
   }).catch(err => {
     console.error('Auth error:', err);
+    hideLoading();
     if (err.code === 'auth/unauthorized-domain') {
       showError('This domain is not authorized in Firebase. Add it under Authentication → Settings → Authorized domains.');
+    } else if (err.code === 'auth/popup-blocked') {
+      showError('Popup was blocked. Please allow popups for this site and try again.');
+    } else if (err.code === 'auth/popup-closed-by-user') {
+      // User closed the popup, do nothing
     } else {
       showError('Sign-in failed: ' + err.message);
     }
   });
 }
 
+async function refreshAccessToken() {
+  // Re-authenticate silently to get a fresh Google OAuth token
+  try {
+    const result = await auth.signInWithPopup(getGoogleProvider());
+    state.accessToken = result.credential.accessToken;
+    state.tokenExpiry = Date.now() + 3500000;
+    sessionStorage.setItem('sortingWheel_token', state.accessToken);
+    sessionStorage.setItem('sortingWheel_tokenExpiry', state.tokenExpiry);
+    return true;
+  } catch (err) {
+    console.error('Token refresh failed:', err);
+    return false;
+  }
+}
+
+function isTokenLikelyValid() {
+  if (!state.accessToken) return false;
+  const expiry = parseInt(sessionStorage.getItem('sortingWheel_tokenExpiry')) || 0;
+  return Date.now() < expiry;
+}
+
 function signOut() {
   auth.signOut();
   state.accessToken = null;
+  state.tokenExpiry = null;
   state.userRole = null;
   document.body.classList.remove('role-admin', 'role-sorter');
   sessionStorage.removeItem('sortingWheel_token');
+  sessionStorage.removeItem('sortingWheel_tokenExpiry');
 }
 
 auth.onAuthStateChanged(async user => {
@@ -1213,6 +1248,19 @@ auth.onAuthStateChanged(async user => {
     // Try to recover token from session
     if (!state.accessToken) {
       state.accessToken = sessionStorage.getItem('sortingWheel_token');
+      state.tokenExpiry = parseInt(sessionStorage.getItem('sortingWheel_tokenExpiry')) || 0;
+    }
+    // If token is missing or likely expired, get a fresh one
+    if (!isTokenLikelyValid()) {
+      showLoading('Reconnecting to Google...');
+      const refreshed = await refreshAccessToken();
+      hideLoading();
+      if (!refreshed) {
+        // Popup was blocked or user cancelled — show login screen
+        showScreen('loginScreen');
+        $('loginSubtitle').textContent = 'Session expired — sign in to continue';
+        return;
+      }
     }
     if (state.sheetId) {
       await enterCeremony();
@@ -1225,9 +1273,13 @@ auth.onAuthStateChanged(async user => {
   }
 });
 
-// Wrapper for authenticated Sheets API calls
-async function sheetsRequest(path, options = {}) {
-  if (!state.accessToken) throw new Error('Not authenticated. Please sign in again.');
+// Wrapper for authenticated Sheets API calls (with auto-retry on 401)
+async function sheetsRequest(path, options = {}, _retried = false) {
+  if (!state.accessToken) {
+    // Try to refresh before giving up
+    const refreshed = await refreshAccessToken();
+    if (!refreshed) throw new Error('Not authenticated. Please sign in again.');
+  }
   const resp = await fetch(`${SHEETS_API}${path}`, {
     ...options,
     headers: {
@@ -1236,7 +1288,13 @@ async function sheetsRequest(path, options = {}) {
       ...(options.headers || {})
     }
   });
-  if (resp.status === 401) {
+  if (resp.status === 401 && !_retried) {
+    // Token expired mid-session — try to refresh and retry once
+    console.warn('401 received, attempting token refresh...');
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      return sheetsRequest(path, options, true);
+    }
     showError('Session expired. Please sign in again.');
     signOut();
     throw new Error('Token expired');
@@ -2509,6 +2567,6 @@ if (paramSheet && !state.sheetId) {
   localStorage.setItem('sortingWheel_sheetId', paramSheet);
 }
 </script>
-<!-- Sorting Wheel v1.2.1 -->
+<!-- Sorting Wheel v1.2.2 -->
 </body>
 </html>
