@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sorting Wheel v1.0.7</title>
+<title>Sorting Wheel v1.1.0</title>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
@@ -971,7 +971,7 @@ body.show-probs .admin-count-card .count-prob { display: block; }
           <h4>Ceremony Balance</h4>
           <div class="balance-slider-wrap">
             <span class="slider-icon" title="Pure chance">&#127922;</span>
-            <input type="range" class="balance-slider" id="balanceSlider" min="0" max="100" value="60" oninput="updateProbabilities()">
+            <input type="range" class="balance-slider" id="balanceSlider" min="0" max="100" value="50" oninput="onBalanceChange()">
             <span class="slider-icon" title="Even distribution">&#9878;</span>
           </div>
           <button class="btn btn-ghost" onclick="toggleProbabilities()" style="font-size:12px; padding:4px 0; margin-top:4px; width:100%; text-align:center;" id="probToggleBtn">Show Probabilities</button>
@@ -1038,7 +1038,7 @@ body.show-probs .admin-count-card .count-prob { display: block; }
 // ============================================================
 //  CONFIG (loaded from config.js)
 // ============================================================
-const APP_VERSION = '1.0.7';
+const APP_VERSION = '1.1.0';
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 // ============================================================
@@ -1054,6 +1054,7 @@ const state = {
   schoolColors: ['#003366'],
   schoolLogoUrl: null,
   schoolLogoBg: '#ffffff',
+  balanceSetting: 50,
   currentSort: null, // {name, number, house}
   ceremonyPhase: 'ready', // ready | input | spinning | result
   userRole: null, // 'admin' | 'sorter' | null (unauthorized)
@@ -1290,6 +1291,7 @@ async function handleCreateNew() {
       ['school_colors', schoolColors.join(',')],
       ['school_logo_url', schoolLogoUrl],
       ['school_logo_bg', '#ffffff'],
+      ['balance_setting', '50'],
       ['---HOUSES---', '---'],
       ['House Name', 'House Color', 'Logo URL'],
     ];
@@ -1309,7 +1311,7 @@ async function handleCreateNew() {
     // 6. Set up Counts tab with COUNTIF formulas
     const countValues = [['House', 'Count']];
     houses.forEach((h, i) => {
-      countValues.push([`=Config!A${8 + i}`, `=COUNTIF(Roster!C:C, A${2 + i})`]);
+      countValues.push([`=Config!A${9 + i}`, `=COUNTIF(Roster!C:C, A${2 + i})`]);
     });
     await sheetsRequest(`/${sheetId}/values/Counts!A1:B${countValues.length}?valueInputOption=USER_ENTERED`, {
       method: 'PUT',
@@ -1382,6 +1384,7 @@ async function loadConfig() {
     if (key === 'school_colors') state.schoolColors = val.split(',').map(c => c.trim()).filter(Boolean);
     if (key === 'school_logo_url' && val) state.schoolLogoUrl = val;
     if (key === 'school_logo_bg') state.schoolLogoBg = val || '#ffffff';
+    if (key === 'balance_setting') state.balanceSetting = parseInt(val) || 50;
     if (key === 'house name') { houseStartIdx = i + 1; break; }
     if (key === '---houses---') continue;
   }
@@ -1505,6 +1508,9 @@ async function enterCeremony() {
     updateCountsDisplay();
     applyRole();
 
+    // Set balance slider from shared setting
+    $('balanceSlider').value = state.balanceSetting;
+
     // Preload all house logos so they're cached for the roller animation
     await preloadImages();
 
@@ -1553,29 +1559,77 @@ function cancelInput() {
 }
 
 // ============================================================
-//  WEIGHTED SELECTION
+//  WEIGHTED SELECTION — Probability Blending
 // ============================================================
-function weightedSelect() {
-  const slider = parseInt($('balanceSlider').value); // 0-100
-  const aggressiveness = slider / 100;
+// Blends between equal probability (random) and deficit-proportional
+// probability (balanced). The slider linearly interpolates between
+// the two distributions, so the midpoint feels perceptually "halfway."
+
+function calculateBlendedProbabilities(sliderValue) {
+  const t = (sliderValue !== undefined ? sliderValue : parseInt($('balanceSlider').value)) / 100;
   const counts = state.counts;
+  const n = counts.length;
+  if (n === 0) return [];
   const maxCount = Math.max(...counts, 1);
 
-  const weights = counts.map(c => {
-    const deficit = maxCount - c;
-    // Base weight of 1 ensures every house has a chance
-    // Aggressiveness scales how much the deficit matters
-    return 1 + (deficit * aggressiveness * 3);
-  });
+  // Equal distribution
+  const randomProbs = counts.map(() => 1 / n);
 
-  const totalWeight = weights.reduce((a, b) => a + b, 0);
-  let random = Math.random() * totalWeight;
+  // Deficit-proportional distribution (+1 so no house ever hits 0%)
+  const deficits = counts.map(c => (maxCount - c) + 1);
+  const deficitTotal = deficits.reduce((a, b) => a + b, 0);
+  const balanceProbs = deficits.map(d => d / deficitTotal);
 
-  for (let i = 0; i < weights.length; i++) {
-    random -= weights[i];
+  // Linear blend
+  return randomProbs.map((rp, i) => rp * (1 - t) + balanceProbs[i] * t);
+}
+
+function weightedSelect() {
+  const probs = calculateBlendedProbabilities();
+  let random = Math.random();
+  for (let i = 0; i < probs.length; i++) {
+    random -= probs[i];
     if (random <= 0) return i;
   }
-  return weights.length - 1;
+  return probs.length - 1;
+}
+
+// ============================================================
+//  BALANCE SLIDER — Shared via Spreadsheet
+// ============================================================
+let balanceSaveTimer = null;
+
+function onBalanceChange() {
+  updateProbabilities();
+  // Debounce save to sheet (500ms after last drag)
+  clearTimeout(balanceSaveTimer);
+  balanceSaveTimer = setTimeout(saveBalanceSetting, 500);
+}
+
+async function saveBalanceSetting() {
+  const val = $('balanceSlider').value;
+  state.balanceSetting = parseInt(val);
+  try {
+    await sheetsRequest(`/${state.sheetId}/values/Config!B6?valueInputOption=USER_ENTERED`, {
+      method: 'PUT',
+      body: JSON.stringify({ values: [[val]] })
+    });
+  } catch (err) {
+    console.warn('Failed to save balance setting:', err);
+  }
+}
+
+async function loadBalanceSetting() {
+  try {
+    const data = await sheetsRequest(`/${state.sheetId}/values/Config!A6:B6`);
+    const row = (data.values || [])[0];
+    if (row && row[0]?.toLowerCase().trim() === 'balance_setting') {
+      state.balanceSetting = parseInt(row[1]) || 50;
+      $('balanceSlider').value = state.balanceSetting;
+    }
+  } catch (err) {
+    console.warn('Failed to load balance setting:', err);
+  }
 }
 
 // ============================================================
@@ -1669,12 +1723,13 @@ async function startSort() {
   if (!name) { $('studentName').focus(); return; }
   const number = $('studentNumber').value.trim();
 
-  // Refresh counts right before sorting for multi-station accuracy
+  // Refresh counts and balance setting for multi-station accuracy
   try {
     await loadCounts();
+    await loadBalanceSetting();
     updateCountsDisplay();
   } catch (e) {
-    console.warn('Count refresh failed, using cached:', e);
+    console.warn('Pre-sort refresh failed, using cached:', e);
   }
 
   // Pick house
@@ -1851,24 +1906,9 @@ function toggleProbabilities() {
   if (showing) updateProbabilities();
 }
 
-function calculateProbabilities() {
-  const slider = parseInt($('balanceSlider').value);
-  const aggressiveness = slider / 100;
-  const counts = state.counts;
-  const maxCount = Math.max(...counts, 1);
-
-  const weights = counts.map(c => {
-    const deficit = maxCount - c;
-    return 1 + (deficit * aggressiveness * 3);
-  });
-
-  const totalWeight = weights.reduce((a, b) => a + b, 0);
-  return weights.map(w => w / totalWeight);
-}
-
 function updateProbabilities() {
   if (!document.body.classList.contains('show-probs')) return;
-  const probs = calculateProbabilities();
+  const probs = calculateBlendedProbabilities();
   const maxProb = Math.max(...probs);
 
   probs.forEach((p, i) => {
@@ -2021,7 +2061,7 @@ async function uploadHouseLogo(index, input) {
     house.logoUrl = url;
 
     // Update sheet (house logos are in column C, starting at row 7)
-    await sheetsRequest(`/${state.sheetId}/values/Config!C${8 + index}?valueInputOption=USER_ENTERED`, {
+    await sheetsRequest(`/${state.sheetId}/values/Config!C${9 + index}?valueInputOption=USER_ENTERED`, {
       method: 'PUT',
       body: JSON.stringify({ values: [[url]] })
     });
@@ -2060,6 +2100,6 @@ if (paramSheet && !state.sheetId) {
   localStorage.setItem('sortingWheel_sheetId', paramSheet);
 }
 </script>
-<!-- Sorting Wheel v1.0.7 -->
+<!-- Sorting Wheel v1.1.0 -->
 </body>
 </html>
