@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sorting Wheel v1.0.4</title>
+<title>Sorting Wheel v1.0.5</title>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
@@ -571,6 +571,7 @@ body {
 .admin-only { display: none !important; }
 body.role-admin .admin-only { display: initial !important; }
 body.role-admin .admin-only.admin-section { display: block !important; }
+body.role-admin .admin-only.admin-col { display: flex !important; }
 body.role-admin .admin-only.admin-flex { display: flex !important; }
 body.role-admin .admin-only.btn { display: inline-block !important; }
 
@@ -624,9 +625,17 @@ body.role-admin .admin-only.btn { display: inline-block !important; }
   max-height: 300px;
   overflow-y: auto;
   display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
+  justify-content: center;
+  gap: 40px;
 }
+
+.admin-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.admin-col-left { min-width: 200px; }
+.admin-col-right { min-width: 280px; display: flex; flex-direction: column; gap: 12px; }
 
 .admin-counts {
   display: flex;
@@ -652,7 +661,7 @@ body.role-admin .admin-only.btn { display: inline-block !important; }
 }
 
 .admin-section {
-  min-width: 200px;
+  min-width: 0;
 }
 .admin-section h4 {
   font-size: 12px;
@@ -674,7 +683,8 @@ body.role-admin .admin-only.btn { display: inline-block !important; }
 .balance-slider {
   -webkit-appearance: none;
   appearance: none;
-  width: 160px;
+  width: 100%;
+  min-width: 200px;
   height: 6px;
   border-radius: 3px;
   background: rgba(255,255,255,0.1);
@@ -760,7 +770,8 @@ body.role-admin .admin-only.btn { display: inline-block !important; }
   .roller-card { height: 200px; }
   .result-house-name { font-size: 36px; }
   .result-placeholder { width: 140px; height: 140px; font-size: 48px; }
-  .admin-content { padding: 0 16px 16px; }
+  .admin-content { padding: 0 16px 16px; flex-direction: column; gap: 16px; }
+  .admin-col-right { min-width: 0; }
 }
 </style>
 </head>
@@ -902,30 +913,31 @@ body.role-admin .admin-only.btn { display: inline-block !important; }
       <span style="opacity:0.4; font-size:11px;" id="versionLabel"></span>
     </div>
     <div class="admin-content">
-      <div class="admin-section">
-        <h4>House Counts</h4>
-        <div class="admin-counts" id="adminCounts"></div>
-      </div>
-      <div class="admin-section admin-only">
-        <h4>Ceremony Balance</h4>
-        <div class="balance-slider-wrap">
-          <span class="slider-icon" title="Pure chance">&#127922;</span>
-          <input type="range" class="balance-slider" id="balanceSlider" min="0" max="100" value="60" oninput="updateProbabilities()">
-          <span class="slider-icon" title="Even distribution">&#9878;</span>
+      <div class="admin-col admin-col-left">
+        <div class="admin-section">
+          <h4>House Counts</h4>
+          <div class="admin-counts" id="adminCounts"></div>
         </div>
-      </div>
-      <div class="admin-section admin-only">
-        <h4 onclick="toggleProbabilities()" style="cursor:pointer; user-select:none;">Probabilities <span id="probToggle" style="font-size:9px; vertical-align:middle;">&#9654;</span></h4>
-        <div id="probabilitiesPanel" style="display:none;">
+        <div class="admin-section" id="probSection" style="display:none;">
           <div id="probBars"></div>
         </div>
       </div>
-      <div class="admin-section admin-only">
-        <h4>Actions</h4>
-        <div class="admin-links">
-          <button class="btn btn-outline" onclick="openSheet()">Open Spreadsheet</button>
-          <button class="btn btn-outline" onclick="refreshCounts()">Refresh Counts</button>
-          <button class="btn btn-outline" onclick="openSettings()">Settings</button>
+      <div class="admin-col admin-col-right admin-only">
+        <div class="admin-section">
+          <h4>Ceremony Balance</h4>
+          <div class="balance-slider-wrap">
+            <span class="slider-icon" title="Pure chance">&#127922;</span>
+            <input type="range" class="balance-slider" id="balanceSlider" min="0" max="100" value="60" oninput="updateProbabilities()">
+            <span class="slider-icon" title="Even distribution">&#9878;</span>
+          </div>
+          <button class="btn btn-ghost" onclick="toggleProbabilities()" style="font-size:12px; padding:4px 0; margin-top:4px; width:100%; text-align:center;" id="probToggleBtn">Show Probabilities</button>
+        </div>
+        <div class="admin-section">
+          <div class="admin-links">
+            <button class="btn btn-outline" onclick="openSheet()">Open Spreadsheet</button>
+            <button class="btn btn-outline" onclick="refreshCounts()">Refresh Counts</button>
+            <button class="btn btn-outline" onclick="openSettings()">Settings</button>
+          </div>
         </div>
       </div>
     </div>
@@ -982,7 +994,7 @@ body.role-admin .admin-only.btn { display: inline-block !important; }
 // ============================================================
 //  CONFIG (loaded from config.js)
 // ============================================================
-const APP_VERSION = '1.0.4';
+const APP_VERSION = '1.0.5';
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 // ============================================================
@@ -1740,16 +1752,12 @@ function toggleAdmin() {
 }
 
 function toggleProbabilities() {
-  const panel = $('probabilitiesPanel');
-  const toggle = $('probToggle');
-  if (panel.style.display === 'none') {
-    panel.style.display = 'block';
-    toggle.innerHTML = '&#9660;';
-    updateProbabilities();
-  } else {
-    panel.style.display = 'none';
-    toggle.innerHTML = '&#9654;';
-  }
+  const panel = $('probSection');
+  const btn = $('probToggleBtn');
+  const isHidden = panel.style.display === 'none';
+  panel.style.display = isHidden ? 'block' : 'none';
+  btn.textContent = isHidden ? 'Hide Probabilities' : 'Show Probabilities';
+  if (isHidden) updateProbabilities();
 }
 
 function calculateProbabilities() {
@@ -1768,7 +1776,7 @@ function calculateProbabilities() {
 }
 
 function updateProbabilities() {
-  if ($('probabilitiesPanel').style.display === 'none') return;
+  if ($('probSection').style.display === 'none') return;
   const probs = calculateProbabilities();
   const container = $('probBars');
   container.innerHTML = '';
