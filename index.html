@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sorting Wheel v1.2.8</title>
+<title>Sorting Wheel v1.2.9</title>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
@@ -1112,7 +1112,7 @@ body.show-probs .admin-count-card .count-prob { display: block; }
 // ============================================================
 //  CONFIG (loaded from config.js)
 // ============================================================
-const APP_VERSION = '1.2.8';
+const APP_VERSION = '1.2.9';
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 // ============================================================
@@ -1223,7 +1223,14 @@ async function signIn() {
   try {
     const result = await auth.signInWithPopup(getGoogleProvider());
     storeToken(result.credential.accessToken);
-    // onAuthStateChanged will fire and handle navigation
+    // Manually proceed — onAuthStateChanged may not re-fire if user was already known
+    state.user = result.user;
+    if (state.sheetId) {
+      await enterCeremony();
+    } else {
+      showScreen('setupScreen');
+      initSetupForm();
+    }
   } catch (err) {
     console.warn('Popup sign-in issue:', err.code, err.message);
     if (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-popup-request') {
@@ -1877,18 +1884,20 @@ function adjustColor(hex, amount) {
 
 function spinRoller(targetIndex) {
   return new Promise(resolve => {
-    const { totalCards, cardHeight } = buildRollerStrip(targetIndex);
+    const frame = $('rollerFrame');
     const strip = $('rollerStrip');
+
+    // MUST be visible before measuring height
+    frame.classList.add('visible');
+    frame.offsetHeight; // Force layout
+
+    const { totalCards, cardHeight } = buildRollerStrip(targetIndex);
     const targetY = -((totalCards - 1) * cardHeight);
 
     // Reset position
     strip.style.transition = 'none';
     strip.style.transform = 'translateY(0)';
-
-    $('rollerFrame').classList.add('visible');
-
-    // Force reflow
-    strip.offsetHeight;
+    strip.offsetHeight; // Force reflow
 
     // Animate — longer spin builds suspense
     const duration = 5500 + Math.random() * 1500; // 5.5-7s
@@ -1927,7 +1936,6 @@ async function startSort() {
 
   // Run selected animation
   if (state.animationType === 'roller') {
-    $('rollerFrame').classList.add('visible');
     await spinRoller(houseIdx);
   } else {
     $('animationStage').classList.add('visible');
@@ -2625,6 +2633,6 @@ if (paramSheet && !state.sheetId) {
   localStorage.setItem('sortingWheel_sheetId', paramSheet);
 }
 </script>
-<!-- Sorting Wheel v1.2.8 -->
+<!-- Sorting Wheel v1.2.9 -->
 </body>
 </html>
