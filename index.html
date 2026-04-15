@@ -3,12 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sorting Ceremony</title>
+<title>Sorting Wheel</title>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+<script src="config.js"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -757,7 +758,7 @@ body.role-admin .admin-only.btn { display: inline-block !important; }
   <div class="login-logo" id="loginLogo">
     <span class="login-logo-placeholder">&#9733;</span>
   </div>
-  <h1 class="heading-display login-title" id="loginTitle">Sorting Ceremony</h1>
+  <h1 class="heading-display login-title" id="loginTitle">Sorting Wheel</h1>
   <p class="login-subtitle" id="loginSubtitle">Sign in to begin</p>
   <button class="google-btn" onclick="signIn()">
     <svg viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
@@ -772,7 +773,7 @@ body.role-admin .admin-only.btn { display: inline-block !important; }
 <div id="unauthorizedScreen" class="screen" style="flex-direction:column; align-items:center; justify-content:center; gap:24px; text-align:center; padding:40px;">
   <div style="font-size:64px; opacity:0.3;">&#128274;</div>
   <h2 class="heading-display" style="font-size:24px;">Not Authorized</h2>
-  <p style="color:var(--text-secondary); max-width:400px;" id="unauthorizedMsg">Your account is not on the authorized users list for this ceremony. Ask an administrator to add your email to the Users tab in the spreadsheet.</p>
+  <p style="color:var(--text-secondary); max-width:400px;" id="unauthorizedMsg">Your account is not on the authorized users list for this Sorting Wheel. Ask an administrator to add your email to the Users tab in the spreadsheet.</p>
   <p style="color:var(--text-muted); font-size:13px;" id="unauthorizedEmail"></p>
   <button class="btn btn-outline" onclick="signOut()">Sign Out</button>
 </div>
@@ -787,9 +788,12 @@ body.role-admin .admin-only.btn { display: inline-block !important; }
         <label>School Name</label>
         <input class="input-field" id="setupSchoolName" placeholder="e.g. Ellis Middle School">
       </div>
-      <div class="form-row">
-        <label>School Color</label>
-        <div class="color-swatch"><input type="color" id="setupSchoolColor" value="#003366"></div>
+      <div class="form-row" style="align-items:flex-start;">
+        <label>School Colors</label>
+        <div style="display:flex; flex-direction:column; gap:8px; flex:1;">
+          <div id="schoolColorsList" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
+          <button class="btn btn-ghost" onclick="addSchoolColor()" style="font-size:12px; align-self:flex-start; padding:4px 12px;">+ Add Color</button>
+        </div>
       </div>
       <div class="form-row">
         <label>School Logo</label>
@@ -804,14 +808,14 @@ body.role-admin .admin-only.btn { display: inline-block !important; }
     </div>
 
     <div class="setup-actions">
-      <button class="btn btn-gold" onclick="handleCreateNew()" id="setupCreateBtn">Create Sorting Ceremony</button>
+      <button class="btn btn-gold" onclick="handleCreateNew()" id="setupCreateBtn">Create Sorting Wheel Spreadsheet</button>
     </div>
 
     <div class="setup-divider">or</div>
 
     <div class="setup-section">
       <h3>Connect Existing Spreadsheet</h3>
-      <p style="font-size:13px; color:var(--text-secondary); margin-bottom:12px;">Paste the spreadsheet ID from a previously created Sorting Ceremony sheet.</p>
+      <p style="font-size:13px; color:var(--text-secondary); margin-bottom:12px;">Paste the spreadsheet ID from a previously created Sorting Wheel sheet.</p>
       <div class="connect-row">
         <input class="input-field" id="setupSheetId" placeholder="Spreadsheet ID">
         <button class="btn btn-outline" onclick="handleConnect()">Connect</button>
@@ -843,7 +847,7 @@ body.role-admin .admin-only.btn { display: inline-block !important; }
         <div class="ceremony-logo-btn" id="ceremonyLogoBtn" onclick="showInputs()">
           <span class="logo-placeholder" id="ceremonyLogoBtnInner">&#9733;</span>
         </div>
-        <span class="ceremony-tap-text">Tap to begin sorting</span>
+        <span class="ceremony-tap-text">Tap to begin</span>
       </div>
     </div>
 
@@ -951,17 +955,8 @@ body.role-admin .admin-only.btn { display: inline-block !important; }
 
 <script>
 // ============================================================
-//  CONFIG
+//  CONFIG (loaded from config.js)
 // ============================================================
-const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyBMWmCgiQStGbEr_RknphhBIujcHbb8-KQ",
-  authDomain: "categorizingcougar.firebaseapp.com",
-  projectId: "categorizingcougar",
-  storageBucket: "categorizingcougar.firebasestorage.app",
-  messagingSenderId: "51923715446",
-  appId: "1:51923715446:web:3205b8a5044d863342e657"
-};
-
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 // ============================================================
@@ -974,7 +969,7 @@ const state = {
   houses: [],      // [{name, color, logoUrl}]
   counts: [],      // [number] parallel to houses
   schoolName: '',
-  schoolColor: '#003366',
+  schoolColors: ['#003366'],
   schoolLogoUrl: null,
   currentSort: null, // {name, number, house}
   ceremonyPhase: 'ready', // ready | input | spinning | result
@@ -1110,16 +1105,36 @@ function initSetupForm() {
   const list = $('setupHousesList');
   list.innerHTML = '';
   DEFAULT_HOUSES.forEach(h => addHouseRow(h.name, h.color));
+  // Init school colors with 2 defaults
+  $('schoolColorsList').innerHTML = '';
+  addSchoolColor('#003366');
+  addSchoolColor('#FFFFFF');
+}
+
+function addSchoolColor(color = '#666666') {
+  const list = $('schoolColorsList');
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:relative; display:inline-block;';
+  wrap.innerHTML = `
+    <div class="color-swatch"><input type="color" class="school-color-input" value="${color}"></div>
+    <button onclick="this.parentElement.remove()" style="position:absolute; top:-6px; right:-6px; background:var(--bg-card); border:1px solid var(--text-muted); color:var(--text-muted); border-radius:50%; width:16px; height:16px; font-size:10px; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; line-height:1;">&times;</button>
+  `;
+  list.appendChild(wrap);
 }
 
 function addHouseRow(name = '', color = '#666666') {
   const list = $('setupHousesList');
   const row = document.createElement('div');
   row.className = 'house-config-row';
+  row.style.flexWrap = 'wrap';
   row.innerHTML = `
-    <input class="input-field house-name-input" placeholder="House name" value="${name}">
+    <input class="input-field house-name-input" placeholder="House name" value="${name}" style="flex:1; min-width:120px;">
     <div class="color-swatch"><input type="color" class="house-color-input" value="${color}"></div>
     <button class="house-remove-btn" onclick="this.parentElement.remove()" title="Remove">&times;</button>
+    <label style="font-size:12px; color:var(--text-muted); width:100%; display:flex; align-items:center; gap:8px; margin-top:4px;">
+      <span>Logo</span>
+      <input type="file" accept="image/*" class="house-logo-input" style="font-size:12px; color:var(--text-secondary); flex:1;">
+    </label>
   `;
   list.appendChild(row);
 }
@@ -1138,11 +1153,15 @@ async function handleCreateNew() {
   for (const row of houseRows) {
     const name = row.querySelector('.house-name-input').value.trim();
     const color = row.querySelector('.house-color-input').value;
+    const logoFile = row.querySelector('.house-logo-input')?.files[0] || null;
     if (!name) { showError('Every house needs a name.'); return; }
-    houses.push({ name, color });
+    houses.push({ name, color, logoFile });
   }
 
-  const schoolColor = $('setupSchoolColor').value;
+  // Collect school colors
+  const schoolColorInputs = $('schoolColorsList').querySelectorAll('.school-color-input');
+  const schoolColors = Array.from(schoolColorInputs).map(i => i.value);
+  if (schoolColors.length === 0) schoolColors.push('#003366');
 
   showLoading('Creating your spreadsheet...');
   try {
@@ -1150,7 +1169,7 @@ async function handleCreateNew() {
     const sheetData = await sheetsRequest('', {
       method: 'POST',
       body: JSON.stringify({
-        properties: { title: `${schoolName} — Sorting Ceremony` },
+        properties: { title: `${schoolName} — Sorting Wheel` },
         sheets: [
           { properties: { title: 'Config', index: 0 } },
           { properties: { title: 'Roster', index: 1 } },
@@ -1162,29 +1181,48 @@ async function handleCreateNew() {
 
     const sheetId = sheetData.spreadsheetId;
 
-    // 2. Populate Config tab
+    // 2. Upload school logo if provided
+    let schoolLogoUrl = '';
+    const schoolLogoFile = $('setupSchoolLogo').files[0];
+    if (schoolLogoFile) {
+      showLoading('Uploading school logo...');
+      schoolLogoUrl = await uploadToStorage(`logos/${sheetId}/school_logo`, schoolLogoFile);
+    }
+
+    // 3. Upload house logos if provided
+    for (let i = 0; i < houses.length; i++) {
+      if (houses[i].logoFile) {
+        showLoading(`Uploading ${houses[i].name} logo...`);
+        houses[i].logoUrl = await uploadToStorage(`logos/${sheetId}/house_${i}`, houses[i].logoFile);
+      } else {
+        houses[i].logoUrl = '';
+      }
+    }
+
+    // 4. Populate Config tab
+    showLoading('Setting up spreadsheet...');
     const configValues = [
       ['Key', 'Value'],
       ['school_name', schoolName],
-      ['school_color', schoolColor],
-      ['school_logo_url', ''],
+      ['school_colors', schoolColors.join(',')],
+      ['school_logo_url', schoolLogoUrl],
       ['---HOUSES---', '---'],
       ['House Name', 'House Color', 'Logo URL'],
     ];
-    houses.forEach(h => configValues.push([h.name, h.color, '']));
+    houses.forEach(h => configValues.push([h.name, h.color, h.logoUrl || '']));
 
     await sheetsRequest(`/${sheetId}/values/Config!A1:C${configValues.length}?valueInputOption=USER_ENTERED`, {
       method: 'PUT',
       body: JSON.stringify({ values: configValues })
     });
 
-    // 3. Set up Roster headers
+    // 5. Set up Roster headers
     await sheetsRequest(`/${sheetId}/values/Roster!A1:E1?valueInputOption=USER_ENTERED`, {
       method: 'PUT',
       body: JSON.stringify({ values: [['Name', 'Student #', 'House', 'Sorted By', 'Timestamp']] })
     });
 
-    // 4. Set up Counts tab with COUNTIF formulas
+    // 6. Set up Counts tab with COUNTIF formulas
     const countValues = [['House', 'Count']];
     houses.forEach((h, i) => {
       countValues.push([`=Config!A${7 + i}`, `=COUNTIF(Roster!C:C, A${2 + i})`]);
@@ -1194,39 +1232,22 @@ async function handleCreateNew() {
       body: JSON.stringify({ values: countValues })
     });
 
-    // 5. Set up Users tab with creating user as admin + hardcoded admins
+    // 7. Set up Users tab with creating user as admin
     const usersValues = [
       ['Email', 'Role'],
       [state.user.email, 'admin'],
     ];
-    // Add hardcoded admin emails if not already the creating user
-    const extraAdmins = ['jacob.v.wilson@gmail.com', 'jacob.wilson@sumnerk12.net'];
-    extraAdmins.forEach(email => {
-      if (email.toLowerCase() !== state.user.email.toLowerCase()) {
-        usersValues.push([email, 'admin']);
-      }
-    });
     await sheetsRequest(`/${sheetId}/values/Users!A1:B${usersValues.length}?valueInputOption=USER_ENTERED`, {
       method: 'PUT',
       body: JSON.stringify({ values: usersValues })
     });
-
-    // 6. Upload school logo if provided
-    const logoFile = $('setupSchoolLogo').files[0];
-    if (logoFile) {
-      const url = await uploadToStorage(`logos/${sheetId}/school_logo`, logoFile);
-      await sheetsRequest(`/${sheetId}/values/Config!B4?valueInputOption=USER_ENTERED`, {
-        method: 'PUT',
-        body: JSON.stringify({ values: [[url]] })
-      });
-    }
 
     // Save sheet ID
     state.sheetId = sheetId;
     localStorage.setItem('sortingWheel_sheetId', sheetId);
 
     hideLoading();
-    showToast('Sorting Ceremony created!');
+    showToast('Sorting Wheel created!');
     await enterCeremony();
 
   } catch (err) {
@@ -1273,7 +1294,8 @@ async function loadConfig() {
     const key = (rows[i][0] || '').toString().toLowerCase().trim();
     const val = rows[i][1] || '';
     if (key === 'school_name') state.schoolName = val;
-    if (key === 'school_color') state.schoolColor = val;
+    if (key === 'school_color') state.schoolColors = [val]; // legacy single color
+    if (key === 'school_colors') state.schoolColors = val.split(',').map(c => c.trim()).filter(Boolean);
     if (key === 'school_logo_url' && val) state.schoolLogoUrl = val;
     if (key === 'house name') { houseStartIdx = i + 1; break; }
     if (key === '---houses---') continue;
@@ -1340,7 +1362,7 @@ async function loadUsers() {
 //  ENTER CEREMONY MODE
 // ============================================================
 async function enterCeremony() {
-  showLoading('Loading ceremony...');
+  showLoading('Loading...');
   try {
     await loadConfig();
     await loadUsers();
@@ -1357,7 +1379,7 @@ async function enterCeremony() {
 
     // Update UI with school info
     $('ceremonySchoolName').textContent = state.schoolName;
-    document.title = `${state.schoolName} — Sorting Ceremony`;
+    document.title = `${state.schoolName} — Sorting Wheel`;
 
     // Set school logo on ceremony button
     const inner = $('ceremonyLogoBtnInner');
@@ -1370,8 +1392,8 @@ async function enterCeremony() {
     if (state.schoolLogoUrl) {
       $('loginLogo').innerHTML = `<img src="${state.schoolLogoUrl}" alt="">`;
     }
-    $('loginTitle').textContent = state.schoolName || 'Sorting Ceremony';
-    $('loginSubtitle').textContent = 'Sign in to begin sorting';
+    $('loginTitle').textContent = state.schoolName || 'Sorting Wheel';
+    $('loginSubtitle').textContent = 'Sign in to begin';
 
     updateCountsDisplay();
     setCeremonyPhase('ready');
@@ -1580,7 +1602,12 @@ function showResult(house, studentName) {
   }
 
   $('resultHouseName').textContent = house.name;
-  $('resultHouseName').style.color = house.color === '#DEDEDE' || house.color === '#FFFFFF' ? '#e0e0e0' : house.color;
+  // Use readable color for the house name on dark background
+  const rh = parseInt(house.color.replace('#','').slice(0,2),16);
+  const gh = parseInt(house.color.replace('#','').slice(2,4),16);
+  const bh = parseInt(house.color.replace('#','').slice(4,6),16);
+  const lumH = rh*0.299 + gh*0.587 + bh*0.114;
+  $('resultHouseName').style.color = lumH < 80 ? '#e0e0e0' : (lumH > 200 ? '#d0d0d0' : house.color);
   $('resultStudentName').textContent = studentName;
 
   show('resultState');
@@ -1665,8 +1692,13 @@ function updateCountsDisplay() {
     card.className = 'admin-count-card';
     card.style.background = h.color + '22';
     card.style.borderColor = h.color + '44';
-    const textColor = contrastText(h.color === '#DEDEDE' || h.color === '#FFFFFF' || h.color === '#2C2C2C' ? '#333' : h.color);
-    card.innerHTML = `<div class="count-num" style="color:${h.color === '#2C2C2C' ? '#aaa' : (h.color === '#DEDEDE' ? '#ddd' : h.color)}">${state.counts[i] || 0}</div>
+    // For the count number, use the house color but ensure readability on dark bg
+    // Very dark colors (#2C2C2C, black) → use white; very light (#DEDEDE, white) → use that light color
+    const hex = h.color.replace('#','');
+    const r = parseInt(hex.slice(0,2),16), g = parseInt(hex.slice(2,4),16), b = parseInt(hex.slice(4,6),16);
+    const lum = r*0.299 + g*0.587 + b*0.114;
+    const numColor = lum < 80 ? '#e0e0e0' : (lum > 200 ? '#d0d0d0' : h.color);
+    card.innerHTML = `<div class="count-num" style="color:${numColor}">${state.counts[i] || 0}</div>
       <div class="count-label">${h.name}</div>`;
     container.appendChild(card);
   });
