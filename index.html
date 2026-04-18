@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sorting Wheel v1.3.0</title>
+<title>Sorting Wheel v1.4.0</title>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
@@ -796,6 +796,71 @@ body.show-probs .admin-count-card .count-prob { display: block; }
 .shield-eliminated { opacity: 0; transform: scale(0.4) rotateY(90deg); pointer-events: none; }
 .shield-winner { transform: scale(1.25); box-shadow: 0 0 50px rgba(201,168,76,0.4); border-color: var(--accent-gold); }
 
+/* Card shuffle */
+.shuffle-arena { position: relative; width: 100%; height: 300px; }
+.shuffle-card {
+  position: absolute; width: 120px; height: 170px; border-radius: 12px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  backface-visibility: hidden; transform-style: preserve-3d;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+}
+.shuffle-card-back {
+  background: linear-gradient(135deg, var(--bg-card), var(--bg-secondary));
+  border: 2px solid var(--accent-gold);
+}
+.shuffle-card-back::after {
+  content: '?'; font-family: 'Cinzel', serif; font-size: 48px; color: var(--accent-gold); opacity: 0.4;
+}
+.shuffle-card-front { border: 2px solid rgba(255,255,255,0.15); }
+.shuffle-card-front .shield-initial { font-family: 'Cinzel', serif; font-size: 42px; font-weight: 900; }
+.shuffle-card-front .shield-name { font-family: 'Cinzel', serif; font-size: 13px; }
+.shuffle-revealed { transform: rotateY(180deg); }
+.shuffle-eliminated { opacity: 0.15; transform: scale(0.85); }
+.shuffle-winner { transform: scale(1.15); box-shadow: 0 0 40px rgba(201,168,76,0.4); border-color: var(--accent-gold); }
+
+/* Tournament bracket */
+.bracket-stage { display: flex; flex-direction: column; align-items: center; gap: 16px; width: 100%; }
+.bracket-round { display: flex; gap: 24px; align-items: center; justify-content: center; }
+.bracket-matchup {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  background: rgba(0,0,0,0.2); border-radius: 10px; border: 1px solid rgba(255,255,255,0.08);
+}
+.bracket-entry {
+  padding: 10px 16px; border-radius: 8px; font-family: 'Cinzel', serif; font-size: 15px;
+  font-weight: 600; min-width: 100px; text-align: center;
+  border: 2px solid transparent; transition: all 0.4s ease;
+}
+.bracket-vs { color: var(--text-muted); font-size: 12px; font-weight: 600; }
+.bracket-fighting { animation: bracket-pulse 0.3s ease infinite alternate; }
+@keyframes bracket-pulse { from { opacity: 0.6; } to { opacity: 1; } }
+.bracket-won { border-color: var(--accent-gold); box-shadow: 0 0 16px rgba(201,168,76,0.3); }
+.bracket-lost { opacity: 0.25; transform: scale(0.9); }
+.bracket-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); }
+.bracket-champion { animation: champion-glow 1s ease infinite alternate; }
+@keyframes champion-glow { from { box-shadow: 0 0 16px rgba(201,168,76,0.3); } to { box-shadow: 0 0 40px rgba(201,168,76,0.6); } }
+
+/* Animation manager in settings */
+.anim-manager-grid { display: flex; flex-direction: column; gap: 10px; }
+.anim-manager-row {
+  display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+  background: rgba(0,0,0,0.2); border-radius: 8px;
+}
+.anim-manager-row label { flex: 1; cursor: pointer; font-size: 14px; }
+.anim-manager-row input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; accent-color: var(--accent-gold); }
+.anim-preview-btn {
+  background: none; border: 1px solid rgba(201,168,76,0.3); color: var(--accent-gold);
+  padding: 4px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; font-family: 'Outfit', sans-serif;
+}
+.anim-preview-btn:hover { background: rgba(201,168,76,0.1); }
+
+/* Preview modal */
+.preview-modal {
+  position: fixed; inset: 0; background: rgba(11,11,24,0.95); z-index: 260;
+  display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 16px;
+}
+.preview-modal .animation-stage { display: flex; }
+
 /* Logo picker modal */
 .logo-picker-overlay {
   position: fixed; inset: 0; background: rgba(11,11,24,0.92); z-index: 250;
@@ -1007,12 +1072,7 @@ body.show-probs .admin-count-card .count-prob { display: block; }
   </div>
 
   <!-- Animation Style Picker -->
-  <div class="anim-picker" id="animPicker" style="position:fixed; bottom:52px; left:50%; transform:translateX(-50%); z-index:10;">
-    <button class="anim-btn active" onclick="setAnimation('roller')" data-anim="roller">Roller</button>
-    <button class="anim-btn" onclick="setAnimation('wheel')" data-anim="wheel">Wheel</button>
-    <button class="anim-btn" onclick="setAnimation('shields')" data-anim="shields">Shields</button>
-    <button class="anim-btn" onclick="setAnimation('particles')" data-anim="particles">Particles</button>
-  </div>
+  <div class="anim-picker" id="animPicker" style="position:fixed; bottom:52px; left:50%; transform:translateX(-50%); z-index:10;"></div>
 
   <!-- Admin Drawer -->
   <div class="admin-drawer" id="adminDrawer">
@@ -1073,6 +1133,11 @@ body.show-probs .admin-count-card .count-prob { display: block; }
       <div id="settingsHouseLogos"></div>
     </div>
     <div class="setup-section" style="margin-bottom:16px;">
+      <h3>Animations</h3>
+      <p style="font-size:13px; color:var(--text-secondary); margin-bottom:12px;">Enable or disable animation styles. Preview each one to see how it looks.</p>
+      <div class="anim-manager-grid" id="animManagerGrid"></div>
+    </div>
+    <div class="setup-section" style="margin-bottom:16px;">
       <h3>Share</h3>
       <p style="font-size:13px; color:var(--text-secondary); margin-bottom:8px;">Send this link to other stations so they connect to the same spreadsheet:</p>
       <div style="display:flex; gap:8px;">
@@ -1114,7 +1179,7 @@ body.show-probs .admin-count-card .count-prob { display: block; }
 // ============================================================
 //  CONFIG (loaded from config.js)
 // ============================================================
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.0';
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 // ============================================================
@@ -1609,6 +1674,9 @@ async function loadUsers() {
     state.authorizedUsers = rows
       .filter(r => r[0] && r[0].trim())
       .map(r => ({ email: r[0].trim().toLowerCase(), role: (r[1] || 'sorter').trim().toLowerCase() }));
+    // Cache first admin for error messages even when sheet is inaccessible
+    const firstAdmin = state.authorizedUsers.find(u => u.role === 'admin');
+    if (firstAdmin) localStorage.setItem('sortingWheel_adminContact', firstAdmin.email);
   } catch (err) {
     // If Users tab doesn't exist (legacy sheet), allow all as sorters
     console.warn('Users tab not found, allowing open access:', err);
@@ -1696,6 +1764,7 @@ async function enterCeremony() {
 
     updateCountsDisplay();
     applyRole();
+    rebuildAnimPicker();
 
     // Set balance slider from shared setting
     $('balanceSlider').value = state.balanceSetting;
@@ -1717,10 +1786,11 @@ async function enterCeremony() {
       initSetupForm();
       showError('Spreadsheet not found. Please set up again.');
     } else if (err.message.includes('permission') || err.message.includes('PERMISSION')) {
+      const adminContact = localStorage.getItem('sortingWheel_adminContact') || 'your Sorting Wheel administrator';
       showError(
         'You don\u2019t have access to this spreadsheet. '
-        + 'An admin needs to share the Google Sheet with your email address. '
-        + 'In the spreadsheet, click Share and add: ' + (state.user?.email || 'your email')
+        + 'Contact ' + adminContact + ' to share the Google Sheet with: '
+        + (state.user?.email || 'your email address')
       );
     } else {
       showError('Failed to load: ' + err.message);
@@ -2223,6 +2293,9 @@ function openSettings() {
 
   // Load logo manager
   loadLogoManager();
+
+  // Load animation manager
+  loadAnimManager();
 }
 
 function closeSettings() {
@@ -2302,11 +2375,56 @@ function setAnimation(type) {
 // ============================================================
 //  ANIMATIONS — Wheel Spin, Shield Elimination, Particle Vortex
 // ============================================================
+const ANIMATION_META = {
+  roller:     { name: 'Roller',     desc: 'Casino slot machine' },
+  wheel:      { name: 'Wheel',      desc: 'Spinning wheel of fortune' },
+  shields:    { name: 'Shields',    desc: 'Cards eliminated one by one' },
+  particles:  { name: 'Particles',  desc: 'Swirling color vortex' },
+  cards:      { name: 'Card Shuffle', desc: 'Shell game card flip' },
+  bracket:    { name: 'Bracket',    desc: 'Tournament matchups' },
+  portal:     { name: 'Portal',     desc: 'Dramatic vortex burst' },
+  helix:      { name: 'Helix',      desc: 'DNA strands unwind' },
+};
+
 const animations = {
   wheel: animateWheel,
   shields: animateShields,
-  particles: animateParticles
+  particles: animateParticles,
+  cards: animateCards,
+  bracket: animateBracket,
+  portal: animatePortal,
+  helix: animateHelix,
 };
+
+function getEnabledAnimations() {
+  const stored = localStorage.getItem('sortingWheel_enabledAnims');
+  if (stored) return JSON.parse(stored);
+  return Object.keys(ANIMATION_META); // all enabled by default
+}
+function setEnabledAnimations(list) {
+  localStorage.setItem('sortingWheel_enabledAnims', JSON.stringify(list));
+  rebuildAnimPicker();
+}
+
+function rebuildAnimPicker() {
+  const enabled = getEnabledAnimations();
+  const picker = $('animPicker');
+  picker.innerHTML = '';
+  enabled.forEach(key => {
+    const meta = ANIMATION_META[key];
+    if (!meta) return;
+    const btn = document.createElement('button');
+    btn.className = 'anim-btn' + (state.animationType === key ? ' active' : '');
+    btn.dataset.anim = key;
+    btn.textContent = meta.name;
+    btn.onclick = () => setAnimation(key);
+    picker.appendChild(btn);
+  });
+  // If current animation was disabled, switch to first enabled
+  if (!enabled.includes(state.animationType)) {
+    state.animationType = enabled[0] || 'roller';
+  }
+}
 
 function animateWheel(targetIdx) {
   return new Promise(resolve => {
@@ -2521,6 +2639,504 @@ function animateParticles(targetIdx) {
 }
 
 // ============================================================
+//  ANIMATION: Card Shuffle
+// ============================================================
+function animateCards(targetIdx) {
+  return new Promise(resolve => {
+    const stage = $('animationStage');
+    stage.classList.add('visible');
+    stage.innerHTML = '<div class="shuffle-arena" id="shuffleArena"></div>';
+    const arena = $('shuffleArena');
+    const n = state.houses.length;
+    const cardW = 120, cardH = 170;
+    const totalW = arena.offsetWidth || 500;
+    const spacing = Math.min(140, (totalW - cardW) / (n - 1));
+    const startX = (totalW - spacing * (n - 1) - cardW) / 2;
+
+    // Create face-down cards
+    const cards = state.houses.map((h, i) => {
+      const card = document.createElement('div');
+      card.className = 'shuffle-card shuffle-card-back';
+      card.style.left = (startX + i * spacing) + 'px';
+      card.style.top = '65px';
+      arena.appendChild(card);
+      return { el: card, houseIdx: i };
+    });
+
+    // Shuffling phase: rapid position swaps
+    let shuffleCount = 0;
+    const maxShuffles = 12 + n * 3;
+    const shuffleInterval = setInterval(() => {
+      const a = Math.floor(Math.random() * n);
+      let b = Math.floor(Math.random() * n);
+      if (b === a) b = (b + 1) % n;
+      const tmpLeft = cards[a].el.style.left;
+      cards[a].el.style.left = cards[b].el.style.left;
+      cards[b].el.style.left = tmpLeft;
+      [cards[a], cards[b]] = [cards[b], cards[a]];
+      shuffleCount++;
+      if (shuffleCount >= maxShuffles) {
+        clearInterval(shuffleInterval);
+        revealCards();
+      }
+    }, 250);
+
+    function revealCards() {
+      // Build elimination order
+      const losers = cards.map((c, i) => i).filter(i => cards[i].houseIdx !== targetIdx);
+      for (let i = losers.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [losers[i], losers[j]] = [losers[j], losers[i]];
+      }
+
+      let delay = 600;
+      losers.forEach(idx => {
+        setTimeout(() => {
+          const h = state.houses[cards[idx].houseIdx];
+          const textColor = contrastText(h.color);
+          cards[idx].el.className = 'shuffle-card shuffle-card-front';
+          cards[idx].el.style.background = h.color;
+          cards[idx].el.style.color = textColor;
+          cards[idx].el.innerHTML = `<span class="shield-initial">${h.name.charAt(0)}</span><span class="shield-name">${h.name}</span>`;
+          setTimeout(() => cards[idx].el.classList.add('shuffle-eliminated'), 400);
+        }, delay);
+        delay += 1000;
+      });
+
+      // Reveal winner
+      setTimeout(() => {
+        const winIdx = cards.findIndex(c => c.houseIdx === targetIdx);
+        const h = state.houses[targetIdx];
+        const textColor = contrastText(h.color);
+        cards[winIdx].el.className = 'shuffle-card shuffle-card-front';
+        cards[winIdx].el.style.background = h.color;
+        cards[winIdx].el.style.color = textColor;
+        cards[winIdx].el.innerHTML = `<span class="shield-initial">${h.name.charAt(0)}</span><span class="shield-name">${h.name}</span>`;
+        setTimeout(() => {
+          cards[winIdx].el.classList.add('shuffle-winner');
+          setTimeout(resolve, 800);
+        }, 400);
+      }, delay);
+    }
+  });
+}
+
+// ============================================================
+//  ANIMATION: Tournament Bracket
+// ============================================================
+function animateBracket(targetIdx) {
+  return new Promise(resolve => {
+    const stage = $('animationStage');
+    stage.classList.add('visible');
+    stage.innerHTML = '<div class="bracket-stage" id="bracketStage"></div>';
+    const bs = $('bracketStage');
+    const n = state.houses.length;
+
+    // Build bracket: shuffle houses, pair them up
+    const order = state.houses.map((h, i) => i);
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    // Ensure target can win: rig bracket so target is in
+    // (no rigging needed — we just pick winners to be target or random)
+
+    // Semi-finals
+    const semis = [];
+    for (let i = 0; i < n; i += 2) {
+      const a = order[i];
+      const b = (i + 1 < n) ? order[i + 1] : null;
+      semis.push({ a, b });
+    }
+
+    // Render semis
+    const semiLabel = document.createElement('div');
+    semiLabel.className = 'bracket-label';
+    semiLabel.textContent = n > 4 ? 'Quarter Finals' : 'Semi Finals';
+    bs.appendChild(semiLabel);
+
+    const semiRow = document.createElement('div');
+    semiRow.className = 'bracket-round';
+    const semiEls = [];
+    semis.forEach(({ a, b }) => {
+      const matchup = document.createElement('div');
+      matchup.className = 'bracket-matchup';
+      const ha = state.houses[a];
+      const elA = document.createElement('div');
+      elA.className = 'bracket-entry';
+      elA.style.background = ha.color; elA.style.color = contrastText(ha.color);
+      elA.textContent = ha.name;
+      matchup.appendChild(elA);
+      if (b !== null) {
+        const vs = document.createElement('span');
+        vs.className = 'bracket-vs'; vs.textContent = 'VS';
+        matchup.appendChild(vs);
+        const hb = state.houses[b];
+        const elB = document.createElement('div');
+        elB.className = 'bracket-entry';
+        elB.style.background = hb.color; elB.style.color = contrastText(hb.color);
+        elB.textContent = hb.name;
+        matchup.appendChild(elB);
+        semiEls.push({ matchup, elA, elB, a, b });
+      } else {
+        semiEls.push({ matchup, elA, elB: null, a, b: null });
+      }
+      semiRow.appendChild(matchup);
+    });
+    bs.appendChild(semiRow);
+
+    // Final row placeholder
+    const finalLabel = document.createElement('div');
+    finalLabel.className = 'bracket-label'; finalLabel.textContent = 'Final';
+    finalLabel.style.display = 'none';
+    bs.appendChild(finalLabel);
+    const finalRow = document.createElement('div');
+    finalRow.className = 'bracket-round'; finalRow.style.display = 'none';
+    bs.appendChild(finalRow);
+
+    // Run semis
+    let delay = 800;
+    const semiWinners = [];
+
+    semiEls.forEach((s, i) => {
+      if (s.b === null) { semiWinners.push(s.a); return; }
+      // Determine winner: target always advances, otherwise random
+      const winner = (s.a === targetIdx || s.b === targetIdx)
+        ? targetIdx : (Math.random() < 0.5 ? s.a : s.b);
+      semiWinners.push(winner);
+
+      setTimeout(() => {
+        s.elA.classList.add('bracket-fighting');
+        s.elB.classList.add('bracket-fighting');
+      }, delay);
+      delay += 1200;
+      setTimeout(() => {
+        s.elA.classList.remove('bracket-fighting');
+        s.elB.classList.remove('bracket-fighting');
+        if (winner === s.a) {
+          s.elA.classList.add('bracket-won'); s.elB.classList.add('bracket-lost');
+        } else {
+          s.elB.classList.add('bracket-won'); s.elA.classList.add('bracket-lost');
+        }
+      }, delay);
+      delay += 800;
+    });
+
+    // Run final
+    setTimeout(() => {
+      finalLabel.style.display = '';
+      finalRow.style.display = '';
+      const finalists = semiWinners.slice(0, 2);
+      if (finalists.length < 2) { finalists.push(semiWinners[0]); }
+
+      const matchup = document.createElement('div');
+      matchup.className = 'bracket-matchup';
+      const ha = state.houses[finalists[0]], hb = state.houses[finalists[1]];
+      const elA = document.createElement('div');
+      elA.className = 'bracket-entry';
+      elA.style.background = ha.color; elA.style.color = contrastText(ha.color);
+      elA.textContent = ha.name;
+      const vs = document.createElement('span');
+      vs.className = 'bracket-vs'; vs.textContent = 'VS';
+      const elB = document.createElement('div');
+      elB.className = 'bracket-entry';
+      elB.style.background = hb.color; elB.style.color = contrastText(hb.color);
+      elB.textContent = hb.name;
+      matchup.appendChild(elA); matchup.appendChild(vs); matchup.appendChild(elB);
+      finalRow.appendChild(matchup);
+
+      setTimeout(() => {
+        elA.classList.add('bracket-fighting');
+        elB.classList.add('bracket-fighting');
+      }, 400);
+
+      setTimeout(() => {
+        elA.classList.remove('bracket-fighting');
+        elB.classList.remove('bracket-fighting');
+        if (finalists[0] === targetIdx) {
+          elA.classList.add('bracket-won', 'bracket-champion'); elB.classList.add('bracket-lost');
+        } else {
+          elB.classList.add('bracket-won', 'bracket-champion'); elA.classList.add('bracket-lost');
+        }
+        setTimeout(resolve, 1000);
+      }, 1800);
+    }, delay + 400);
+  });
+}
+
+// ============================================================
+//  ANIMATION: Portal Vortex
+// ============================================================
+function animatePortal(targetIdx) {
+  return new Promise(resolve => {
+    const stage = $('animationStage');
+    stage.classList.add('visible');
+    const size = Math.min(stage.offsetWidth || 500, 500);
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    canvas.style.cssText = `width:${size}px; height:${size}px;`;
+    stage.innerHTML = '';
+    stage.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+    const cx = size / 2, cy = size / 2;
+    const duration = 4500;
+    let startTime = null;
+
+    // Create ring particles
+    const rings = [];
+    state.houses.forEach((h, i) => {
+      for (let j = 0; j < 30; j++) {
+        rings.push({
+          house: i, color: h.color,
+          angle: Math.random() * Math.PI * 2,
+          radius: 30 + Math.random() * (size * 0.4),
+          speed: 0.02 + Math.random() * 0.04,
+          size: 2 + Math.random() * 3,
+          phase: Math.random() * Math.PI * 2,
+        });
+      }
+    });
+
+    function frame(t) {
+      if (!startTime) startTime = t;
+      const progress = Math.min((t - startTime) / duration, 1);
+      ctx.clearRect(0, 0, size, size);
+
+      // Phase 1 (0-0.6): vortex builds
+      // Phase 2 (0.6-0.75): flash
+      // Phase 3 (0.75-1): reveal
+      const winColor = state.houses[targetIdx].color;
+
+      if (progress < 0.6) {
+        const p = progress / 0.6;
+        const speedMult = 1 + p * 8;
+        const radiusShrink = 1 - p * 0.5;
+        rings.forEach(r => {
+          r.angle += r.speed * speedMult;
+          const rad = r.radius * radiusShrink;
+          const x = cx + Math.cos(r.angle) * rad;
+          const y = cy + Math.sin(r.angle) * rad;
+          const wave = 0.5 + 0.5 * Math.sin(r.phase + progress * 10);
+          ctx.beginPath();
+          ctx.arc(x, y, r.size * (0.5 + wave * 0.5), 0, Math.PI * 2);
+          ctx.globalAlpha = 0.5 + p * 0.5;
+          ctx.fillStyle = r.color;
+          ctx.fill();
+        });
+        // Glow at center
+        const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 60 * p);
+        grad.addColorStop(0, 'rgba(255,255,255,' + (p * 0.4) + ')');
+        grad.addColorStop(1, 'transparent');
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, size, size);
+      } else if (progress < 0.75) {
+        // FLASH — screen fills with winner color
+        const flashP = (progress - 0.6) / 0.15;
+        ctx.globalAlpha = 1 - flashP * 0.3;
+        ctx.fillStyle = winColor;
+        ctx.fillRect(0, 0, size, size);
+        // Shockwave ring
+        const ringRadius = flashP * size * 0.6;
+        ctx.beginPath();
+        ctx.arc(cx, cy, ringRadius, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255,255,255,' + (1 - flashP) + ')';
+        ctx.lineWidth = 4; ctx.stroke();
+      } else {
+        // Settle — winner particles orbit gently, name appears
+        const settleP = (progress - 0.75) / 0.25;
+        rings.filter(r => r.house === targetIdx).forEach(r => {
+          r.angle += r.speed * 0.5;
+          const rad = 40 + r.radius * 0.3;
+          const x = cx + Math.cos(r.angle) * rad;
+          const y = cy + Math.sin(r.angle) * rad;
+          ctx.beginPath();
+          ctx.arc(x, y, r.size * 1.5, 0, Math.PI * 2);
+          ctx.globalAlpha = 0.7;
+          ctx.fillStyle = winColor;
+          ctx.fill();
+        });
+        ctx.globalAlpha = settleP;
+        ctx.fillStyle = contrastText('#0f0f1a');
+        ctx.font = `bold ${size / 10}px Cinzel, serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(state.houses[targetIdx].name, cx, cy);
+      }
+      ctx.globalAlpha = 1;
+      if (progress < 1) requestAnimationFrame(frame);
+      else setTimeout(resolve, 400);
+    }
+    requestAnimationFrame(frame);
+  });
+}
+
+// ============================================================
+//  ANIMATION: DNA Helix
+// ============================================================
+function animateHelix(targetIdx) {
+  return new Promise(resolve => {
+    const stage = $('animationStage');
+    stage.classList.add('visible');
+    const size = Math.min(stage.offsetWidth || 500, 500);
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    canvas.style.cssText = `width:${size}px; height:${size}px;`;
+    stage.innerHTML = '';
+    stage.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+    const cx = size / 2, cy = size / 2;
+    const duration = 6000;
+    let startTime = null;
+    const n = state.houses.length;
+
+    // Build elimination order
+    const losers = state.houses.map((_, i) => i).filter(i => i !== targetIdx);
+    for (let i = losers.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [losers[i], losers[j]] = [losers[j], losers[i]];
+    }
+
+    function frame(t) {
+      if (!startTime) startTime = t;
+      const progress = Math.min((t - startTime) / duration, 1);
+      ctx.clearRect(0, 0, size, size);
+      const time = progress * 12;
+
+      state.houses.forEach((h, i) => {
+        // Determine if this strand is eliminated
+        const loserIdx = losers.indexOf(i);
+        let alpha = 1;
+        if (loserIdx >= 0) {
+          const eliminateAt = 0.2 + loserIdx * (0.5 / losers.length);
+          if (progress > eliminateAt) {
+            alpha = Math.max(0, 1 - (progress - eliminateAt) / 0.2);
+          }
+        }
+        if (alpha <= 0.01) return;
+
+        // Helix path — vertical with sinusoidal x offset
+        const phaseOffset = (i / n) * Math.PI * 2;
+        const amplitude = (i === targetIdx && progress > 0.7)
+          ? 60 * (1 - (progress - 0.7) / 0.3) // Winner straightens
+          : 60;
+        const points = 40;
+
+        ctx.beginPath();
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = h.color;
+        ctx.lineWidth = (i === targetIdx && progress > 0.8) ? 5 : 3;
+
+        for (let p = 0; p <= points; p++) {
+          const py = (p / points) * size;
+          const wave = Math.sin(time + phaseOffset + (py / size) * Math.PI * 4);
+          const px = cx + wave * amplitude;
+          if (p === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+
+        // Draw nodes along the strand
+        for (let p = 0; p <= points; p += 4) {
+          const py = (p / points) * size;
+          const wave = Math.sin(time + phaseOffset + (py / size) * Math.PI * 4);
+          const px = cx + wave * amplitude;
+          ctx.beginPath();
+          ctx.arc(px, py, 4, 0, Math.PI * 2);
+          ctx.fillStyle = h.color;
+          ctx.fill();
+        }
+      });
+
+      // Winner name in center when settled
+      if (progress > 0.85) {
+        const fadeIn = Math.min((progress - 0.85) / 0.1, 1);
+        ctx.globalAlpha = fadeIn;
+        ctx.fillStyle = contrastText('#0f0f1a');
+        ctx.font = `bold ${size / 10}px Cinzel, serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(state.houses[targetIdx].name, cx, cy);
+      }
+
+      ctx.globalAlpha = 1;
+      if (progress < 1) requestAnimationFrame(frame);
+      else setTimeout(resolve, 400);
+    }
+    requestAnimationFrame(frame);
+  });
+}
+
+// ============================================================
+//  ANIMATION MANAGER (Settings)
+// ============================================================
+function loadAnimManager() {
+  const grid = $('animManagerGrid');
+  grid.innerHTML = '';
+  const enabled = getEnabledAnimations();
+  Object.entries(ANIMATION_META).forEach(([key, meta]) => {
+    const row = document.createElement('div');
+    row.className = 'anim-manager-row';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = enabled.includes(key);
+    cb.onchange = () => {
+      let list = getEnabledAnimations();
+      if (cb.checked) { if (!list.includes(key)) list.push(key); }
+      else { list = list.filter(k => k !== key); if (list.length === 0) { cb.checked = true; return; } }
+      setEnabledAnimations(list);
+    };
+    const label = document.createElement('label');
+    label.textContent = meta.name;
+    label.title = meta.desc;
+    label.onclick = () => cb.click();
+    const desc = document.createElement('span');
+    desc.style.cssText = 'font-size:12px; color:var(--text-muted); flex:1;';
+    desc.textContent = meta.desc;
+    const prevBtn = document.createElement('button');
+    prevBtn.className = 'anim-preview-btn';
+    prevBtn.textContent = 'Preview';
+    prevBtn.onclick = () => previewAnimation(key);
+    row.appendChild(cb);
+    row.appendChild(label);
+    row.appendChild(desc);
+    row.appendChild(prevBtn);
+    grid.appendChild(row);
+  });
+}
+
+async function previewAnimation(key) {
+  const modal = document.createElement('div');
+  modal.className = 'preview-modal';
+  modal.innerHTML = `<div class="animation-stage visible" id="previewStage" style="display:flex;"></div>
+    <button class="btn btn-outline" id="previewClose">Close Preview</button>`;
+  document.body.appendChild(modal);
+  modal.querySelector('#previewClose').onclick = () => modal.remove();
+
+  // Pick a random house for preview
+  const previewIdx = Math.floor(Math.random() * state.houses.length);
+
+  // Temporarily point animation stage to preview
+  const origStage = $('animationStage');
+  const previewStage = modal.querySelector('#previewStage');
+  previewStage.id = 'animationStage';
+
+  if (key === 'roller') {
+    // Show roller frame briefly in modal context
+    previewStage.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:40px;">Roller uses the main frame — try it from the ceremony screen!</div>';
+    previewStage.id = '';
+    origStage.id = 'animationStage';
+    return;
+  }
+
+  try {
+    await animations[key](previewIdx);
+  } catch (e) { console.warn('Preview error:', e); }
+
+  previewStage.id = '';
+  origStage.id = 'animationStage';
+  // Leave modal open so they can see the result, close button dismisses
+}
+
+// ============================================================
 //  LOGO LIBRARY — Persistent across sheets
 // ============================================================
 async function listAllLogos(ref) {
@@ -2667,6 +3283,6 @@ if (paramSheet && !state.sheetId) {
   localStorage.setItem('sortingWheel_sheetId', paramSheet);
 }
 </script>
-<!-- Sorting Wheel v1.3.0 -->
+<!-- Sorting Wheel v1.4.0 -->
 </body>
 </html>
