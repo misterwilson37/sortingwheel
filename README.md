@@ -11,7 +11,7 @@ spreadsheet — not the browser — is the source of truth.
 **Short link for staff:** https://sortingwheel.misterwilson.org/ellis.html
 **The spreadsheet:** https://docs.google.com/spreadsheets/d/1rYZ71el1yPjo1X7F71nI8WQ9LvCqY4g7r-iXr5IYQqE/edit
 
-Current version: **1.6.2**
+Current version: **1.7.0**
 
 ---
 
@@ -19,12 +19,15 @@ Current version: **1.6.2**
 
 | File | Version | What it is |
 |---|---|---|
-| `index.html` | 1.6.2 | The entire app. HTML + CSS + JS in one file, no build step. |
+| `index.html` | 1.7.0 | The entire app. HTML + CSS + JS in one file, no build step. |
 | `ellis.html` | 1.1.0 | Redirect page. Forwards to `index.html?sheet=<Ellis sheet ID>` so staff only have to remember one short URL. |
+| `faculty.html` | 1.0.0 | Separate ceremony for spinning **faculty** into houses, with predetermined outcomes. Never touches student counts or the Roster. See §10. |
+| `animations.js` | 1.0.0 | The eight ceremony animations, shared by `index.html` and `faculty.html`. |
+| `animations.css` | 1.0.0 | Styles for those animations. Companion to `animations.js`. |
 | `config.js` | — | Firebase project keys (`categorizingcougar`). Safe to be public; Firebase web config is designed to be. |
 | `CNAME` | — | GitHub Pages custom domain: `sortingwheel.misterwilson.org` |
-| `README.md` | 1.5.0 | This file. |
-| `HANDOFF.md` | 1.5.0 | Technical notes for the next developer / Claude session. |
+| `README.md` | 1.6.0 | This file. |
+| `HANDOFF.md` | 1.6.0 | Technical notes for the next developer / Claude session. |
 
 Deployment is GitHub Pages. Upload the changed file through the GitHub web UI
 and it is live in about a minute. There is no build, no CLI, no bundler.
@@ -506,3 +509,67 @@ list is the source of truth and the mirror keeps up with it automatically.
 - The correction is front-loaded — heaviest streaking happens at the start of
   registration. See §5.
 - Requires internet. There is no offline mode.
+
+---
+
+## 10. Faculty ceremony (`faculty.html`)
+
+**URL:** `sortingwheel.misterwilson.org/faculty.html`
+
+A separate page for spinning new staff into houses. Faculty are not part of the
+student counts and never should be, so this page **never reads `Counts` and never
+writes a single row to `Roster`.** It signs in only to read house names, colours,
+and logos from the `Config` tab, so the ceremony looks identical to the student
+one.
+
+Outcomes here are **predetermined**, which is exactly why it lives on its own
+page. A "rig the result" setting inside the student app would be one forgotten
+toggle away from silently rigging real student sorting. Here it can't reach them.
+A striped banner across the top says so on every screen.
+
+### Building the queue
+
+Set every spin up *before* anyone walks in. That's the whole trick: during the
+ceremony you only type a name and tap Sort, so there is nothing to change
+mid-ceremony and nothing on screen that gives it away. Three people back to back
+looks like one continuous ceremony.
+
+Two kinds of entry:
+
+**Fixed set** — tick several houses and add them as a set. Those houses get
+handed out across that many spins in a random order. Use this for "we need a
+Callidus and a Princeps, don't care who gets which": the pair is guaranteed, but
+which of the two people gets which house is a real coin flip decided at the
+moment they spin.
+
+**Open spin** — one spin, genuinely random, excluding whichever houses you tick.
+"Anything except Vevaios" is a true three-way spin.
+
+So the request *"one in Princeps and one in Callidus, then Walker as anything
+except Vevaios"* is: tick Callidus and Princeps → Add as a set. Then tick Vevaios
+→ Add open spin. Three spins queued. Press Start.
+
+Verified over 20,000 simulated runs: the first two spins produce Callidus and
+Princeps 100% of the time, the order splits 50/50, and the third spin never
+returns Vevaios.
+
+### Running it
+
+Type the name, tap **Sort** (or press Enter), watch, tap **Next**. Identical
+actions for every person. At the end you get a name-and-house list to
+screenshot — nothing is saved anywhere, by design, since faculty houses are
+tracked separately.
+
+Pick the animation at the bottom of the ceremony screen. All eight are the same
+ones the students see.
+
+### Notes
+
+- It needs the spreadsheet ID, which it takes from this device's saved value or
+  from `?sheet=ID` in the URL. Open the main app once on a device first and it
+  will already be there.
+- It caches the house list locally after a successful sign-in, so if sign-in
+  fails at an awkward moment you can carry on with the saved houses.
+- It requests **read-only** spreadsheet access, unlike the main app.
+- Removing an entry from a set also drops one house from that set, since the two
+  are the same thing.
