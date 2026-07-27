@@ -11,7 +11,7 @@ spreadsheet — not the browser — is the source of truth.
 **Short link for staff:** https://sortingwheel.misterwilson.org/ellis.html
 **The spreadsheet:** https://docs.google.com/spreadsheets/d/1rYZ71el1yPjo1X7F71nI8WQ9LvCqY4g7r-iXr5IYQqE/edit
 
-Current version: **1.7.0**
+Current version: **1.8.0**
 
 ---
 
@@ -19,15 +19,15 @@ Current version: **1.7.0**
 
 | File | Version | What it is |
 |---|---|---|
-| `index.html` | 1.7.0 | The entire app. HTML + CSS + JS in one file, no build step. |
+| `index.html` | 1.8.0 | The entire app. HTML + CSS + JS in one file, no build step. |
 | `ellis.html` | 1.1.0 | Redirect page. Forwards to `index.html?sheet=<Ellis sheet ID>` so staff only have to remember one short URL. |
-| `faculty.html` | 1.0.0 | Separate ceremony for spinning **faculty** into houses, with predetermined outcomes. Never touches student counts or the Roster. See §10. |
+| `faculty.html` | 2.0.0 | Separate ceremony for spinning **faculty** into houses. Visually identical to the student one. Never touches student counts or the Roster. See §10. |
 | `animations.js` | 1.0.0 | The eight ceremony animations, shared by `index.html` and `faculty.html`. |
-| `animations.css` | 1.0.0 | Styles for those animations. Companion to `animations.js`. |
+| `sorting-wheel.css` | 1.0.0 | The whole stylesheet, shared by both pages. One file so the two ceremonies cannot drift apart visually. |
 | `config.js` | — | Firebase project keys (`categorizingcougar`). Safe to be public; Firebase web config is designed to be. |
 | `CNAME` | — | GitHub Pages custom domain: `sortingwheel.misterwilson.org` |
-| `README.md` | 1.6.0 | This file. |
-| `HANDOFF.md` | 1.6.0 | Technical notes for the next developer / Claude session. |
+| `README.md` | 1.7.0 | This file. |
+| `HANDOFF.md` | 1.7.0 | Technical notes for the next developer / Claude session. |
 
 Deployment is GitHub Pages. Upload the changed file through the GitHub web UI
 and it is live in about a minute. There is no build, no CLI, no bundler.
@@ -516,60 +516,61 @@ list is the source of truth and the mirror keeps up with it automatically.
 
 **URL:** `sortingwheel.misterwilson.org/faculty.html`
 
-A separate page for spinning new staff into houses. Faculty are not part of the
-student counts and never should be, so this page **never reads `Counts` and never
-writes a single row to `Roster`.** It signs in only to read house names, colours,
-and logos from the `Config` tab, so the ceremony looks identical to the student
-one.
+A separate page for spinning new staff into houses. It is a **faithful clone of
+the student ceremony** — same stylesheet, same animations, same school logo and
+name, same "Tap to begin", same reveal, same confetti. From the outside it is
+indistinguishable. The only visible difference is a small `Faculty` badge in the
+header.
 
-Outcomes here are **predetermined**, which is exactly why it lives on its own
-page. A "rig the result" setting inside the student app would be one forgotten
-toggle away from silently rigging real student sorting. Here it can't reach them.
-A striped banner across the top says so on every screen.
+Behind the scenes it never reads student house counts and never writes a row to
+the Roster. Faculty are tracked separately, so nothing here is saved anywhere.
 
-### Building the queue
+### It works out of the box
 
-Set every spin up *before* anyone walks in. That's the whole trick: during the
-ceremony you only type a name and tap Sort, so there is nothing to change
-mid-ceremony and nothing on screen that gives it away. Three people back to back
-looks like one continuous ceremony.
+**Open it, sign in, and start spinning.** With no setup at all, every spin is an
+even chance across all four houses — a plain wheel. You don't have to configure
+anything.
 
-Two kinds of entry:
+### Faculty Controls
+
+Tap the bar at the bottom of the ready screen to open the controls. This is the
+only place anything is revealed, and only you see it. Two ways to shape outcomes:
 
 **Fixed set** — tick several houses and add them as a set. Those houses get
-handed out across that many spins in a random order. Use this for "we need a
-Callidus and a Princeps, don't care who gets which": the pair is guaranteed, but
-which of the two people gets which house is a real coin flip decided at the
-moment they spin.
+handed out across that many spins, in a random order. **If you tick two houses,
+it queues two spins.** Use it for "we need a Callidus and a Princeps, don't care
+who gets which": the pair is guaranteed, but which of the two people gets which
+house is drawn at random the moment they spin. A real coin flip for each of them.
 
 **Open spin** — one spin, genuinely random, excluding whichever houses you tick.
-"Anything except Vevaios" is a true three-way spin.
+Tick nothing and it's a plain even spin.
 
-So the request *"one in Princeps and one in Callidus, then Walker as anything
-except Vevaios"* is: tick Callidus and Princeps → Add as a set. Then tick Vevaios
-→ Add open spin. Three spins queued. Press Start.
+So *"one in Princeps and one in Callidus, then Walker as anything except
+Vevaios"* is: tick Callidus and Princeps → **Add as a set**. Tick Vevaios → **Add
+open spin**. Three spins queued. Close the modal and go.
 
-Verified over 20,000 simulated runs: the first two spins produce Callidus and
-Princeps 100% of the time, the order splits 50/50, and the third spin never
-returns Vevaios.
+Verified over 20,000 runs: the first two spins produce Callidus and Princeps
+100% of the time, the order splits 50/50, and the third never returns Vevaios.
 
 ### Running it
 
-Type the name, tap **Sort** (or press Enter), watch, tap **Next**. Identical
-actions for every person. At the end you get a name-and-house list to
-screenshot — nothing is saved anywhere, by design, since faculty houses are
-tracked separately.
+Exactly like the student version. Tap the logo, type a name, **SORT**, watch,
+then **✓ Next** or **✗ Re-sort**. Re-sort puts the house back into the set, so
+re-spinning someone doesn't quietly use up one of your reserved houses.
 
-Pick the animation at the bottom of the ceremony screen. All eight are the same
-ones the students see.
+Once the queue runs out, spins go back to even chance — so you can queue three
+and then keep going if a fourth person turns up.
+
+The session's results appear in the controls modal at the bottom. Screenshot it
+if you want a record.
 
 ### Notes
 
-- It needs the spreadsheet ID, which it takes from this device's saved value or
-  from `?sheet=ID` in the URL. Open the main app once on a device first and it
-  will already be there.
-- It caches the house list locally after a successful sign-in, so if sign-in
-  fails at an awkward moment you can carry on with the saved houses.
+- Nothing on the ceremony screen hints at any of this. Operator-facing text lives
+  in the controls modal only, by design.
+- It needs the spreadsheet ID, taken from this device's saved value or from
+  `?sheet=ID`. Open the main app once on a device and it'll be there.
+- It caches houses and branding locally after a successful sign-in, so if sign-in
+  fails at a bad moment you can carry on with the saved set.
 - It requests **read-only** spreadsheet access, unlike the main app.
-- Removing an entry from a set also drops one house from that set, since the two
-  are the same thing.
+- Pick any of the eight animations at the bottom, same as the students.
