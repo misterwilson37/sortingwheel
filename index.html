@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sorting Wheel v1.4.1</title>
+<title>Sorting Wheel v1.5.0</title>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
@@ -952,10 +952,10 @@ body.show-probs .admin-count-card .count-prob { display: block; }
   </button>
 </div>
 
-<!-- ==================== SETUP SCREEN ==================== -->
-<div id="setupScreen" class="screen">
-
 <!-- ==================== UNAUTHORIZED SCREEN ==================== -->
+<!-- NOTE: must be a direct child of <body>. It used to be nested inside
+     #setupScreen, which meant its display:none parent hid it completely
+     and unauthorized users saw a blank black screen. Do not re-nest. -->
 <div id="unauthorizedScreen" class="screen" style="flex-direction:column; align-items:center; justify-content:center; gap:24px; text-align:center; padding:40px;">
   <div style="font-size:64px; opacity:0.3;">&#128274;</div>
   <h2 class="heading-display" style="font-size:24px;">Not Authorized</h2>
@@ -964,7 +964,8 @@ body.show-probs .admin-count-card .count-prob { display: block; }
   <button class="btn btn-outline" onclick="signOut()">Sign Out</button>
 </div>
 
-<!-- ==================== SETUP SCREEN (continued) ==================== -->
+<!-- ==================== SETUP SCREEN ==================== -->
+<div id="setupScreen" class="screen">
   <div class="setup-container">
     <h2 class="heading-display" style="text-align:center; font-size:28px;">Set Up Your Ceremony</h2>
 
@@ -1179,7 +1180,7 @@ body.show-probs .admin-count-card .count-prob { display: block; }
 // ============================================================
 //  CONFIG (loaded from config.js)
 // ============================================================
-const APP_VERSION = '1.4.1';
+const APP_VERSION = '1.5.0';
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 // ============================================================
@@ -1203,6 +1204,30 @@ const state = {
   userRole: null, // 'admin' | 'sorter' | null (unauthorized)
   authorizedUsers: [], // [{email, role}]
 };
+
+// ============================================================
+//  RESOLVE WHICH SPREADSHEET THIS STATION USES
+// ============================================================
+//  Runs BEFORE Firebase auth is wired up so that onAuthStateChanged
+//  can never fire against a stale sheet ID.
+//
+//  Precedence: ?sheet= URL param  >  localStorage cache
+//
+//  The URL param always wins. Previously it only applied when the
+//  cache was empty, so any station that had ever connected to a
+//  different sheet silently ignored the share link.
+// ============================================================
+{
+  const urlParams = new URLSearchParams(window.location.search);
+  const paramSheet = urlParams.get('sheet');
+  if (paramSheet) {
+    if (state.sheetId && state.sheetId !== paramSheet) {
+      console.log('Share link overriding cached sheet ID');
+    }
+    state.sheetId = paramSheet;
+    localStorage.setItem('sortingWheel_sheetId', paramSheet);
+  }
+}
 
 // ============================================================
 //  FIREBASE INIT
@@ -1991,10 +2016,23 @@ function spinRoller(targetIndex) {
 // ============================================================
 //  SORT FLOW
 // ============================================================
+let sortInFlight = false;
+
 async function startSort() {
+  if (sortInFlight) return; // Enter key + SORT button could otherwise double-fire
   const name = $('studentName').value.trim();
   if (!name) { $('studentName').focus(); return; }
   const number = $('studentNumber').value.trim();
+
+  // PRE-FLIGHT: the Google token lasts ~1 hour. Catch expiry HERE, before
+  // the student watches a 6-second animation that then fails to save.
+  if (!isTokenLikelyValid()) {
+    showError('This station\u2019s Google session has expired. Click Sign Out, sign back in, then re-enter this student. Nothing has been lost.');
+    return;
+  }
+
+  sortInFlight = true;
+  $('sortBtn').disabled = true;
 
   // Refresh counts and balance setting for multi-station accuracy
   try {
@@ -2014,13 +2052,23 @@ async function startSort() {
   // Transition to spinning
   setCeremonyPhase('spinning');
 
-  // Run selected animation
-  if (state.animationType === 'roller') {
-    await spinRoller(houseIdx);
-  } else {
-    $('animationStage').classList.add('visible');
-    await animations[state.animationType](houseIdx);
+  // Run selected animation. If an animation ever throws we still want to
+  // reach the reveal — the house is already chosen, and leaving the
+  // station frozen mid-ceremony is the worst possible outcome.
+  try {
+    if (state.animationType === 'roller') {
+      await spinRoller(houseIdx);
+    } else {
+      $('animationStage').classList.add('visible');
+      await animations[state.animationType](houseIdx);
+      $('animationStage').classList.remove('visible');
+    }
+  } catch (err) {
+    console.error('Animation failed, jumping to reveal:', err);
     $('animationStage').classList.remove('visible');
+  } finally {
+    sortInFlight = false;
+    $('sortBtn').disabled = false;
   }
 
   // Reveal
@@ -2078,8 +2126,14 @@ function fireConfetti(color) {
   })();
 }
 
+let approveInFlight = false;
+
 async function approveSort() {
   if (!state.currentSort) return;
+  if (approveInFlight) return; // guard against double-tap creating two roster rows
+  approveInFlight = true;
+  $('approveBtn').disabled = true;
+
   const { name, number, houseIdx, house } = state.currentSort;
 
   showLoading('Recording...');
@@ -2087,7 +2141,11 @@ async function approveSort() {
     const timestamp = new Date().toLocaleString();
     const sortedBy = state.user.email;
 
-    await sheetsRequest(`/${state.sheetId}/values/Roster!A:E:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, {
+    // valueInputOption=RAW (not USER_ENTERED) is deliberate:
+    //  - keeps leading zeros on student numbers ("007" stays "007")
+    //  - a name that happens to start with = + - or @ is stored as text
+    //    instead of being evaluated as a spreadsheet formula
+    await sheetsRequest(`/${state.sheetId}/values/Roster!A:E:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
       method: 'POST',
       body: JSON.stringify({
         values: [[name, number, house.name, sortedBy, timestamp]]
@@ -2105,6 +2163,9 @@ async function approveSort() {
   } catch (err) {
     hideLoading();
     showError('Failed to save: ' + err.message);
+  } finally {
+    approveInFlight = false;
+    $('approveBtn').disabled = false;
   }
 }
 
@@ -3351,14 +3412,10 @@ function showLogoPicker() {
 // Version label
 $('versionLabel').textContent = `v${APP_VERSION}`;
 
-// Check URL params for shared sheet ID
-const urlParams = new URLSearchParams(window.location.search);
-const paramSheet = urlParams.get('sheet');
-if (paramSheet && !state.sheetId) {
-  state.sheetId = paramSheet;
-  localStorage.setItem('sortingWheel_sheetId', paramSheet);
-}
+// Sheet ID resolution now happens at the top of this script,
+// before Firebase auth is initialised. See "RESOLVE WHICH
+// SPREADSHEET THIS STATION USES".
 </script>
-<!-- Sorting Wheel v1.4.1 -->
+<!-- Sorting Wheel v1.5.0 -->
 </body>
 </html>
