@@ -3,9 +3,9 @@
 Technical notes for whoever picks this up next, human or Claude.
 Operational instructions live in `README.md`; this file is the code map.
 
-**Handoff version:** 1.0.0
-**App version at handoff:** `index.html` 1.5.0, `ellis.html` 1.1.0
-**Session:** Round 1 of documented work. Claude instance name: **Trilby**
+**Handoff version:** 1.2.0
+**App version at handoff:** `index.html` 1.6.0, `ellis.html` 1.1.0
+**Session:** Rounds 1-2 of documented work. Claude instance name: **Trilby**
 — a hat that reads code instead of minds, for an app that sorts students into
 houses. Predecessors on other Jake projects: Fable, Stedman. Do not reuse.
 
@@ -14,6 +14,68 @@ and tested by four students. It works. It was about to be used to sort ~150
 rising 6th graders. This session was a cold-read audit plus fixes, with no
 access to the live spreadsheet or a browser — all verification was static
 analysis, jsdom, and simulation.
+
+---
+
+## DESIGN INVARIANT — read before changing sorting logic
+
+**This app exists to balance houses across the entire school, not within a
+grade level.**
+
+It replaced a physical wheel that left Callidus significantly smaller than the
+other three houses. The incoming 6th grade class is *deliberately* skewed —
+heavily toward Callidus — so that school-wide totals come out even. A 6th grade
+that is 60 Callidus / 30 each of the others is the app working correctly.
+
+Two things follow, and an earlier draft of this handoff got both wrong:
+
+- **Do not add cohort-scoped or per-grade counts.** It sounds like an
+  improvement. It defeats the entire purpose. An earlier version of this file
+  listed it as the highest-value enhancement; that was a misread of intent,
+  corrected here so nobody builds it.
+- **The counts must reflect the whole enrolled student body**, not just students
+  this app has sorted. See "Baseline counts" below. If the app starts from zero
+  it has no deficit to correct and produces exactly the outcome it was built to
+  prevent.
+
+If a future request seems to ask for even splits *within* 6th grade, confirm
+with Jake before writing code. It probably means something else.
+
+### Real numbers as of July 2026
+
+8th grade already removed from the source sheet. Current 6th + 7th = students
+still enrolled next year, which is the baseline:
+
+| House | baseline | needs (target 141) |
+|---|---|---|
+| Accomodore | 99 | 42 |
+| Callidus | 85 | 56 |
+| Princeps | 97 | 44 |
+| Vevaios | 102 | 39 |
+| **total** | **383** | **181 incoming** |
+
+Note **Vevaios is now the largest house, not Callidus's rival for smallest.**
+The old physical wheel dumped 79 of last year's 216 sixth graders into Vevaios.
+Callidus is behind by only 17, so the correction needed this year is mild — about
+31% Callidus, not the ~90% seen in the spring load-test. If someone reports
+"Callidus isn't getting enough students," check the numbers before assuming a
+bug.
+
+### Baseline counts
+
+Pre-app students (sorted by the physical wheel) are represented as four numbers
+in **`Counts!C2:C5`**, with `Counts!B` summing the `COUNTIF` and the baseline:
+
+```
+Counts!B2  =COUNTIF(Roster!C:C, A2) + C2
+```
+
+This works with zero code change because `loadCounts()` reads `Counts!A2:B{n}`
+and the app **never writes to the Counts tab** after initial creation
+(`handleCreateNew`, which won't run again on an existing sheet). Verified.
+
+Consequence: `Roster` row count is *not* the school population. It is only the
+students this app sorted. Anything that needs true totals must read `Counts!B`.
 
 ---
 
@@ -116,7 +178,94 @@ per-device in `localStorage` under `sortingWheel_enabledAnims`.
 
 ---
 
-## Fixed this session (1.4.1 → 1.5.0)
+## Added in 1.6.0 — Even Target sorting mode
+
+Jake signed off on this as a **toggle**, explicitly so the old behaviour stays
+available if the new one misbehaves live. Default is `slider`; target mode is
+opt-in. Keep it that way.
+
+`calculateTargetProbabilities()` weights each draw by how far each house is
+below a fixed per-house target:
+
+```js
+need_i  = max(0, targetPerHouse - counts_i)
+prob_i  = need_i / sum(need)
+```
+
+Because remaining need and remaining students shrink together, the odds hold
+roughly constant across the whole event instead of front-loading.
+
+`currentProbabilities()` is the dispatcher and the **single source of truth** —
+both `weightedSelect()` and `updateProbabilities()` go through it, so the
+displayed odds can never disagree with actual behaviour. If you add a third
+mode, add it there and nowhere else.
+
+### The bug that nearly shipped — read this
+
+The first implementation computed the target live:
+
+```js
+const target = (counts.reduce(sum) + expectedIncoming) / n;   // WRONG
+```
+
+`counts` grows with every confirmed sort, so the target climbed all night and
+never converged. My standalone simulation said the gap would be 0.0; running the
+same 2,000 trials through the *actual shipped function* in jsdom gave an average
+gap of **10.6**. The bug only appeared because the test exercised the real code
+rather than a reimplementation of it.
+
+The fix: `state.targetPerHouse` is a stored constant, written to
+`Config!target_per_house` when an admin sets the class size, and never derived
+from live counts. **Do not make it dynamic again.**
+
+Lesson worth keeping: simulate the shipped function, not your mental model of it.
+
+### Config keys and semantics
+
+| Key | Meaning |
+|---|---|
+| `sort_mode` | `slider` \| `target` |
+| `expected_incoming` | what the admin last typed; display/audit only |
+| `target_per_house` | **authoritative** fixed target used by the algorithm |
+
+Found by name-scan anywhere below the houses block, so they don't disturb the
+hardcoded rows above. `saveConfigKey()` appends the row if absent and remembers
+its position, so the sheet self-heals — no manual setup required.
+
+The house parser breaks on a blank name **or** on any name in
+`EXTRA_CONFIG_KEYS`, so an appended settings row can never be mistaken for a
+fifth house. That guard is why appending is safe; don't remove it.
+
+The input is labelled **"Students still to sort"**, not "class size". This is
+deliberate: re-entering it mid-event recomputes the target from current counts,
+which is only correct if the number means students remaining.
+
+`loadBalanceSetting()` was widened from `Config!A6:B6` to `A1:B50` and now
+refreshes mode, target, and slider before every sort, so a mode change on one
+station propagates to the others on their next student. It deliberately does
+**not** re-read houses — swapping logos mid-animation would be bad.
+
+### Verified by test, not by inspection
+
+| Case | Result |
+|---|---|
+| Real Ellis numbers, 181 students, 2,000 trials | 141/141/141/141 every time, gap 0 |
+| Longest same-house streak | 4.5 avg, 11 worst |
+| Overshoot — 220 arrive when 181 expected | gap 1, fallback holds level |
+| Undershoot — 160 arrive when 181 expected | gap ~5 |
+| Mid-event switch target → slider 75 | gap 4, safe |
+| 5 houses instead of 4 | gap 0, nothing hardcodes 4 |
+| Sheet with no new keys (backwards compat) | defaults to slider, 4 houses parsed |
+| Target mode with target unset | falls back to slider blend |
+
+Test harness: `test_v16.js` and `test_extra.js`. They load `index.html` in
+jsdom, stub Firebase, and export the lexically-scoped `state` via an appended
+`globalThis.state = state`. Recreate them from the snippets in "Testing" below
+if lost.
+
+---
+
+## Fixed in 1.5.0 (from 1.4.1)
 
 **1. `unauthorizedScreen` was unreachable. Severity: high.**
 It was nested inside `#setupScreen`, so `showScreen('unauthorizedScreen')`
@@ -190,21 +339,26 @@ that referred to the file as `go.html`.
 
 Ordered by value. Nothing here is required for the app to work.
 
-**1. Add a graduation-year / cohort column to the Roster.**
-Highest value. Right now the annual purge of departing students has no reliable
-key — the only signal is the Timestamp column. Adding column F (`Class Of`)
-turns next summer's cleanup into a filter-and-delete. Requires: extend the
-append range `Roster!A:E` → `A:F`, add a value to the appended row, and decide
-where the year comes from (a Config key like `current_cohort` is probably
-simplest, set once per year by an admin).
+**1. Secondary input method — SPECIFICATION NEEDED, do not guess.**
+Jake raised this and it's the next thing to build, but "a secondary method of
+input" has at least four plausible readings and they lead to completely
+different designs:
 
-**2. Cohort-scoped counts.**
-Follows from #1. Would let the balance slider even out *this year's class*
-while the Roster still holds the whole school — resolving the tradeoff
-documented in README §3, which currently forces an either/or. Would mean
-counting with `COUNTIFS(Roster!C:C, A2, Roster!F:F, <cohort>)` and a UI toggle
-for which scope is active. This is the one change that would meaningfully
-improve sorting quality.
+- a bulk paste / queue of names to work through one at a time
+- scanning a student ID card or barcode
+- picking from a pre-loaded roster instead of typing
+- a second physical station type, e.g. a student-facing kiosk
+
+Ask which before writing anything. Note that a pre-loaded roster would mean
+putting student names into the sheet ahead of time, which changes the data
+handling story.
+
+**2. Add a graduation-year / `Class Of` column to the Roster.**
+Now lower priority than it first appeared, because the baseline-column approach
+means the annual rollover is four numbers rather than a row hunt. Still useful:
+the only way to identify a cohort in the Roster today is by Timestamp. Requires
+extending the append range `Roster!A:E` → `A:F` and sourcing the year (a Config
+key set once a year is simplest).
 
 **3. In-app undo / last-sort correction.**
 Typos currently require opening the spreadsheet. A "fix last entry" button that
