@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sorting Wheel v1.6.0</title>
+<title>Sorting Wheel v1.6.1</title>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
@@ -1214,7 +1214,7 @@ body.show-probs .admin-count-card .count-prob { display: block; }
 // ============================================================
 //  CONFIG (loaded from config.js)
 // ============================================================
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.6.1';
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 // ============================================================
@@ -2067,33 +2067,49 @@ async function setSortMode(mode) {
   }
 }
 
-// Entering a class size FIXES the per-house target from the counts as they
-// stand right now. Re-entering it later recomputes from the counts at that
-// moment, which is correct: the number means "students still to come."
+// Entering a figure FIXES the per-house target. The number means "students
+// still to sort", so re-entering it mid-event is correct and recomputes from
+// wherever the counts stand at that moment.
+//
+// Counts are re-read from the sheet before computing, because an admin may be
+// setting this on a station whose counts are stale — another station may have
+// been sorting for the last half hour. Computing the target from stale counts
+// would set it too low and under-fill every house.
 let expectedSaveTimer = null;
 function onExpectedIncomingChange() {
   const val = Math.max(0, parseInt($('expectedIncoming').value) || 0);
   state.expectedIncoming = val;
 
-  if (val > 0 && state.houses.length > 0) {
-    const currentTotal = state.counts.reduce((a, b) => a + b, 0);
-    state.targetPerHouse = (currentTotal + val) / state.houses.length;
-  } else {
-    state.targetPerHouse = 0;
-  }
-
+  // Provisional target from cached counts so the readout responds immediately.
+  recomputeTarget();
   refreshModeUI();
+
   clearTimeout(expectedSaveTimer);
   expectedSaveTimer = setTimeout(async () => {
     try {
-      await saveConfigKey('expected_incoming', val);
+      await loadCounts();          // authoritative counts
+      updateCountsDisplay();
+      recomputeTarget();           // recompute against them
+      refreshModeUI();
+      await saveConfigKey('expected_incoming', state.expectedIncoming);
       await saveConfigKey('target_per_house', state.targetPerHouse.toFixed(2));
-      showToast(`Target set: ${Math.round(state.targetPerHouse)} per house`);
+      showToast(state.targetPerHouse > 0
+        ? `Target set: ${Math.round(state.targetPerHouse)} per house`
+        : 'Target cleared');
     } catch (err) {
       console.warn('Failed to save target settings:', err);
       showError('Target set on this station but could not be saved to the spreadsheet: ' + err.message);
     }
-  }, 600);
+  }, 700);
+}
+
+function recomputeTarget() {
+  if (state.expectedIncoming > 0 && state.houses.length > 0) {
+    const currentTotal = state.counts.reduce((a, b) => a + b, 0);
+    state.targetPerHouse = (currentTotal + state.expectedIncoming) / state.houses.length;
+  } else {
+    state.targetPerHouse = 0;
+  }
 }
 
 // ============================================================
@@ -3644,6 +3660,6 @@ $('versionLabel').textContent = `v${APP_VERSION}`;
 // before Firebase auth is initialised. See "RESOLVE WHICH
 // SPREADSHEET THIS STATION USES".
 </script>
-<!-- Sorting Wheel v1.6.0 -->
+<!-- Sorting Wheel v1.6.1 -->
 </body>
 </html>
