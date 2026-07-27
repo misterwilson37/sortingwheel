@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sorting Wheel — Faculty v1.0.0</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+<script src="config.js"></script>
+<script src="animations.js"></script>
+<link rel="stylesheet" href="animations.css">
+<style>
+:root {
+  --bg-deep: #0b0b18;
+  --bg-primary: #0f0f1a;
+  --bg-secondary: #181830;
+  --bg-card: #1e1e36;
+  --accent-gold: #c9a84c;
+  --accent-gold-light: #e8d5a0;
+  --accent-gold-dark: #8a6f2e;
+  --text-primary: #f0e6d3;
+  --text-secondary: #9a9080;
+  --text-muted: #5a5248;
+  --danger: #c0392b;
+  --success: #27ae60;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Outfit', system-ui, sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+.heading-display { font-family: 'Cinzel', Georgia, serif; letter-spacing: 0.02em; }
+
+/* Faculty banner — must be impossible to miss */
+#facultyBanner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 400;
+  background: repeating-linear-gradient(45deg, #4a2c00, #4a2c00 12px, #3a2200 12px, #3a2200 24px);
+  border-bottom: 2px solid var(--accent-gold);
+  color: var(--accent-gold-light);
+  font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+  text-align: center; padding: 6px 12px; font-weight: 600;
+}
+.screen {
+  display: none; min-height: 100vh; padding: 48px 20px 40px;
+  flex-direction: column; align-items: center; justify-content: center; gap: 20px;
+}
+.screen.active { display: flex; }
+
+.panel {
+  background: var(--bg-secondary);
+  border: 1px solid rgba(201,168,76,0.2);
+  border-radius: 14px; padding: 24px;
+  width: 100%; max-width: 560px;
+}
+h2 { font-size: 22px; margin-bottom: 4px; }
+.sub { color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
+
+.btn {
+  font-family: 'Outfit', sans-serif; font-size: 14px; font-weight: 500;
+  padding: 10px 18px; border-radius: 8px; cursor: pointer;
+  border: 1.5px solid var(--accent-gold); background: var(--accent-gold);
+  color: #1a1400; transition: all 0.15s ease;
+}
+.btn:hover { background: var(--accent-gold-light); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-outline { background: transparent; color: var(--accent-gold); }
+.btn-outline:hover { background: rgba(201,168,76,0.12); }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--text-secondary); }
+.btn-ghost:hover { color: var(--text-primary); }
+.btn-sm { font-size: 12px; padding: 5px 10px; }
+
+.input-field {
+  width: 100%; padding: 10px 14px; border-radius: 8px;
+  background: var(--bg-card); color: var(--text-primary);
+  border: 1.5px solid rgba(201,168,76,0.25);
+  font-family: 'Outfit', sans-serif; font-size: 15px;
+}
+.input-field:focus { outline: none; border-color: var(--accent-gold); }
+
+.house-toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
+.house-toggle {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border-radius: 8px; cursor: pointer;
+  border: 1.5px solid rgba(201,168,76,0.2); background: var(--bg-card);
+  font-size: 13px; user-select: none;
+}
+.house-toggle.on { border-color: var(--accent-gold); background: rgba(201,168,76,0.12); }
+.swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.2); }
+
+.queue-list { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+.queue-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: 8px;
+  background: var(--bg-card); border: 1px solid rgba(201,168,76,0.15);
+  font-size: 13px;
+}
+.queue-num {
+  width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(201,168,76,0.15); color: var(--accent-gold);
+  font-size: 12px; font-weight: 600;
+}
+.queue-item.done { opacity: 0.45; }
+.queue-desc { flex: 1; }
+.divider { height: 1px; background: rgba(201,168,76,0.15); margin: 18px 0; }
+
+/* Ceremony */
+#ceremonyScreen { justify-content: flex-start; padding-top: 60px; }
+.ceremony-inner { width: 100%; max-width: 640px; display: flex; flex-direction: column; align-items: center; gap: 18px; }
+.step-tag { color: var(--text-muted); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; }
+.result-card {
+  text-align: center; padding: 28px 24px; border-radius: 16px;
+  border: 2px solid; width: 100%; max-width: 460px;
+}
+.result-house { font-family: 'Cinzel', serif; font-size: 40px; font-weight: 700; line-height: 1.1; }
+.result-name { font-size: 15px; color: var(--text-secondary); margin-bottom: 10px; }
+.result-logo { width: 96px; height: 96px; object-fit: contain; margin: 0 auto 14px; display: block; }
+.result-placeholder {
+  width: 96px; height: 96px; margin: 0 auto 14px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Cinzel', serif; font-size: 40px; font-weight: 700;
+}
+.results-table { width: 100%; font-size: 14px; border-collapse: collapse; }
+.results-table td { padding: 8px 6px; border-bottom: 1px solid rgba(201,168,76,0.12); }
+.results-table td:last-child { text-align: right; font-weight: 600; }
+
+.error-banner {
+  position: fixed; top: 34px; left: 50%; transform: translateX(-50%);
+  background: var(--danger); color: #fff; padding: 10px 18px; border-radius: 8px;
+  font-size: 13px; max-width: 90vw; z-index: 500; display: none;
+}
+.error-banner.visible { display: block; }
+.spinner {
+  width: 30px; height: 30px; border: 3px solid rgba(201,168,76,0.2);
+  border-top-color: var(--accent-gold); border-radius: 50%;
+  animation: fspin 0.8s linear infinite;
+}
+@keyframes fspin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div id="facultyBanner">Faculty ceremony &middot; outcomes are predetermined &middot; nothing is written to the student roster</div>
+<div class="error-banner" id="errorBanner"></div>
+
+<!-- ============ SIGN IN ============ -->
+<div id="loginScreen" class="screen active">
+  <div class="panel" style="text-align:center;">
+    <h2 class="heading-display">Faculty Sorting</h2>
+    <p class="sub" style="margin:10px 0 20px;">Signs in only to read your house names, colours, and logos from the Sorting Wheel spreadsheet. It never reads student counts and never writes anything.</p>
+    <button class="btn" onclick="signIn()">Sign in with Google</button>
+    <div id="cachedOffer" style="display:none; margin-top:16px;">
+      <p class="sub">Or continue with the house list saved on this device:</p>
+      <button class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="useCachedHouses()">Use saved houses</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ QUEUE BUILDER ============ -->
+<div id="setupScreen" class="screen">
+  <div class="panel">
+    <h2 class="heading-display">Build the queue</h2>
+    <p class="sub">Set every spin up before anyone walks in. During the ceremony you only type a name and tap Sort, so there is nothing to change mid-ceremony and nothing on screen that gives it away.</p>
+
+    <div class="divider"></div>
+
+    <h3 style="font-size:14px; margin-bottom:2px;">Fixed set</h3>
+    <p class="sub">These houses will be handed out across that many spins, in a random order. Use this for "we need a Callidus and a Princeps, don't care who gets which."</p>
+    <div class="house-toggles" id="poolToggles"></div>
+    <button class="btn btn-outline btn-sm" onclick="addPool()">Add as a set</button>
+
+    <div class="divider"></div>
+
+    <h3 style="font-size:14px; margin-bottom:2px;">Open spin</h3>
+    <p class="sub">One spin, genuinely random, but excluding whichever houses you tick.</p>
+    <div class="house-toggles" id="excludeToggles"></div>
+    <button class="btn btn-outline btn-sm" onclick="addFree()">Add open spin</button>
+
+    <div class="divider"></div>
+
+    <h3 style="font-size:14px;">Queue <span id="queueCount" class="sub"></span></h3>
+    <div class="queue-list" id="queueList"></div>
+
+    <div style="display:flex; gap:8px; margin-top:12px;">
+      <button class="btn" id="startBtn" onclick="startCeremony()" disabled>Start ceremony</button>
+      <button class="btn btn-ghost btn-sm" onclick="clearQueue()">Clear</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ CEREMONY ============ -->
+<div id="ceremonyScreen" class="screen">
+  <div class="ceremony-inner">
+    <div class="step-tag" id="stepTag"></div>
+
+    <div id="inputBlock" style="width:100%; max-width:420px; display:flex; flex-direction:column; gap:10px;">
+      <input class="input-field" id="personName" placeholder="Name" autocomplete="off">
+      <button class="btn" id="sortBtn" onclick="doSpin()">Sort</button>
+    </div>
+
+    <div class="roller-frame" id="rollerFrame">
+      <div class="roller-pointer roller-pointer-left"></div>
+      <div class="roller-pointer roller-pointer-right"></div>
+      <div class="roller-viewport"><div class="roller-strip" id="rollerStrip"></div></div>
+    </div>
+    <div class="animation-stage" id="animationStage"></div>
+
+    <div id="resultBlock" style="display:none; width:100%; flex-direction:column; align-items:center; gap:16px;">
+      <div class="result-card" id="resultCard">
+        <div class="result-name" id="resultName"></div>
+        <div id="resultLogoWrap"></div>
+        <div class="result-house heading-display" id="resultHouse"></div>
+      </div>
+      <button class="btn" id="nextBtn" onclick="nextPerson()">Next</button>
+    </div>
+
+    <div id="animPickerWrap" style="display:flex; gap:6px; flex-wrap:wrap; justify-content:center; margin-top:8px;"></div>
+  </div>
+</div>
+
+<!-- ============ RESULTS ============ -->
+<div id="doneScreen" class="screen">
+  <div class="panel">
+    <h2 class="heading-display">Done</h2>
+    <p class="sub" style="margin-bottom:14px;">Screenshot this for your records. Nothing was saved anywhere.</p>
+    <table class="results-table"><tbody id="resultsBody"></tbody></table>
+    <div style="display:flex; gap:8px; margin-top:18px;">
+      <button class="btn btn-outline btn-sm" onclick="location.reload()">Start over</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+//  SORTING WHEEL — FACULTY CEREMONY
+//  faculty.html v1.0.0
+// ============================================================
+//  A deliberately separate page for spinning faculty into houses.
+//
+//  WHY SEPARATE, and why it must stay that way:
+//    - Faculty are not part of the student house counts and never
+//      should be. This page never reads Counts and never writes a
+//      single row to Roster.
+//    - Outcomes here are PREDETERMINED. That logic must not live
+//      anywhere near the student app, where a setting left switched
+//      on would silently rig real student sorting.
+//    - The only thing shared with index.html is animations.js and
+//      animations.css, so the ceremony looks identical.
+//
+//  It signs in purely to read house names/colours/logos from the
+//  Config tab. Nothing else is touched.
+// ============================================================
+
+const $ = id => document.getElementById(id);
+const SCOPES = 'https://www.googleapis.com/auth/spreadsheets.readonly';
+const CACHE_KEY = 'sortingWheel_facultyHouses';
+
+firebase.initializeApp(FIREBASE_CONFIG);
+const auth = firebase.auth();
+
+const fstate = {
+  token: null,
+  sheetId: localStorage.getItem('sortingWheel_sheetId') || '',
+  houses: [],
+  animationType: 'roller',
+  // queue
+  steps: [],        // resolved sequence of spins
+  pools: {},        // poolId -> [houseIdx] still available
+  cursor: 0,
+  results: [],
+  spinning: false
+};
+
+// wire up the shared animation module
+const _sw = createSortingWheelAnimations({
+  $: $,
+  getHouses: () => fstate.houses
+});
+const ANIMATION_META = _sw.ANIMATION_META;
+const animations = _sw.animations;
+const spinRoller = _sw.spinRoller;
+
+// ------------------------------------------------------------
+//  UI helpers
+// ------------------------------------------------------------
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  $(id).classList.add('active');
+}
+function showError(msg) {
+  const b = $('errorBanner');
+  b.textContent = msg;
+  b.classList.add('visible');
+  setTimeout(() => b.classList.remove('visible'), 9000);
+}
+
+// ------------------------------------------------------------
+//  Auth — read-only, and only to fetch the Config tab
+// ------------------------------------------------------------
+async function signIn() {
+  try {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    provider.addScope(SCOPES);
+    const res = await auth.signInWithPopup(provider);
+    fstate.token = res.credential.accessToken;
+    await loadHouses();
+  } catch (err) {
+    if (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-popup-request') {
+      showError('Your browser blocked the sign-in popup. Allow popups for this site and try again.');
+    } else {
+      showError('Sign-in failed: ' + (err.message || err.code));
+    }
+    offerCache();
+  }
+}
+
+function offerCache() {
+  if (localStorage.getItem(CACHE_KEY)) $('cachedOffer').style.display = 'block';
+}
+
+function useCachedHouses() {
+  try {
+    fstate.houses = JSON.parse(localStorage.getItem(CACHE_KEY));
+    if (!fstate.houses || !fstate.houses.length) throw new Error('empty');
+    buildSetupUI();
+    showScreen('setupScreen');
+  } catch (e) {
+    showError('No usable saved house list on this device.');
+  }
+}
+
+async function loadHouses() {
+  if (!fstate.sheetId) {
+    showError('No spreadsheet ID saved on this device. Open the main Sorting Wheel once first, or add ?sheet=ID to this URL.');
+    offerCache();
+    return;
+  }
+  try {
+    const r = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${fstate.sheetId}/values/Config!A1:C50`,
+      { headers: { Authorization: 'Bearer ' + fstate.token } }
+    );
+    if (!r.ok) throw new Error((await r.json()).error?.message || r.statusText);
+    const rows = (await r.json()).values || [];
+
+    let start = -1;
+    for (let i = 0; i < rows.length; i++) {
+      if ((rows[i][0] || '').toString().toLowerCase().trim() === 'house name') { start = i + 1; break; }
+    }
+    const SETTINGS = ['sort_mode', 'expected_incoming', 'target_per_house'];
+    fstate.houses = [];
+    if (start >= 0) {
+      for (let i = start; i < rows.length; i++) {
+        const name = (rows[i][0] || '').trim();
+        if (!name || SETTINGS.includes(name.toLowerCase())) break;
+        fstate.houses.push({ name, color: rows[i][1] || '#666666', logoUrl: rows[i][2] || null });
+      }
+    }
+    if (!fstate.houses.length) throw new Error('no houses found on the Config tab');
+
+    localStorage.setItem(CACHE_KEY, JSON.stringify(fstate.houses));
+    buildSetupUI();
+    showScreen('setupScreen');
+  } catch (err) {
+    showError('Could not read houses: ' + err.message);
+    offerCache();
+  }
+}
+
+// ------------------------------------------------------------
+//  Queue builder
+// ------------------------------------------------------------
+let poolPicks = new Set();
+let excludePicks = new Set();
+
+function buildSetupUI() {
+  const mk = (container, picks, onToggle) => {
+    const el = $(container);
+    el.innerHTML = '';
+    fstate.houses.forEach((h, i) => {
+      const d = document.createElement('div');
+      d.className = 'house-toggle' + (picks.has(i) ? ' on' : '');
+      d.innerHTML = `<span class="swatch" style="background:${h.color}"></span>`;
+      d.appendChild(document.createTextNode(h.name));
+      d.onclick = () => { onToggle(i); };
+      el.appendChild(d);
+    });
+  };
+  mk('poolToggles', poolPicks, i => {
+    poolPicks.has(i) ? poolPicks.delete(i) : poolPicks.add(i);
+    buildSetupUI();
+  });
+  mk('excludeToggles', excludePicks, i => {
+    excludePicks.has(i) ? excludePicks.delete(i) : excludePicks.add(i);
+    buildSetupUI();
+  });
+  renderQueue();
+  buildAnimPicker();
+}
+
+let poolCounter = 0;
+
+function addPool() {
+  if (poolPicks.size === 0) { showError('Tick at least one house first.'); return; }
+  const id = 'p' + (++poolCounter);
+  const members = [...poolPicks];
+  fstate.pools[id] = members.slice();
+  members.forEach(() => fstate.steps.push({ kind: 'pool', poolId: id }));
+  poolPicks.clear();
+  buildSetupUI();
+}
+
+function addFree() {
+  const excluded = [...excludePicks];
+  if (excluded.length >= fstate.houses.length) { showError('That excludes every house.'); return; }
+  fstate.steps.push({ kind: 'free', excluded });
+  excludePicks.clear();
+  buildSetupUI();
+}
+
+function clearQueue() {
+  fstate.steps = []; fstate.pools = {}; poolCounter = 0;
+  poolPicks.clear(); excludePicks.clear();
+  buildSetupUI();
+}
+
+function describeStep(step, idx) {
+  if (step.kind === 'pool') {
+    const members = fstate.pools[step.poolId] || [];
+    const names = members.map(i => fstate.houses[i].name).join(' or ');
+    return `From the set: ${names}`;
+  }
+  const allowed = fstate.houses
+    .map((h, i) => i).filter(i => !step.excluded.includes(i));
+  if (step.excluded.length === 0) return 'Any house, genuinely random';
+  return `Any except ${step.excluded.map(i => fstate.houses[i].name).join(', ')} `
+       + `(${allowed.length}-way random)`;
+}
+
+function renderQueue() {
+  const el = $('queueList');
+  el.innerHTML = '';
+  fstate.steps.forEach((step, i) => {
+    const d = document.createElement('div');
+    d.className = 'queue-item' + (i < fstate.cursor ? ' done' : '');
+    const n = document.createElement('div');
+    n.className = 'queue-num'; n.textContent = String(i + 1);
+    const desc = document.createElement('div');
+    desc.className = 'queue-desc'; desc.textContent = describeStep(step, i);
+    d.appendChild(n); d.appendChild(desc);
+    if (fstate.cursor === 0) {
+      const x = document.createElement('button');
+      x.className = 'btn btn-ghost btn-sm'; x.textContent = 'Remove';
+      x.onclick = () => removeStep(i);
+      d.appendChild(x);
+    }
+    el.appendChild(d);
+  });
+  $('queueCount').textContent = fstate.steps.length ? `— ${fstate.steps.length} spin${fstate.steps.length > 1 ? 's' : ''}` : '— empty';
+  $('startBtn').disabled = fstate.steps.length === 0;
+}
+
+function removeStep(i) {
+  const step = fstate.steps[i];
+  if (step.kind === 'pool') {
+    // removing one member of a set also drops one house from that set
+    const pool = fstate.pools[step.poolId];
+    if (pool && pool.length) pool.pop();
+  }
+  fstate.steps.splice(i, 1);
+  buildSetupUI();
+}
+
+// ------------------------------------------------------------
+//  Animation picker
+// ------------------------------------------------------------
+function buildAnimPicker() {
+  const wrap = $('animPickerWrap');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  Object.entries(ANIMATION_META).forEach(([key, meta]) => {
+    const b = document.createElement('button');
+    b.className = 'btn btn-ghost btn-sm';
+    b.textContent = meta.name;
+    b.style.border = fstate.animationType === key ? '1.5px solid var(--accent-gold)' : '1.5px solid transparent';
+    b.style.color = fstate.animationType === key ? 'var(--accent-gold)' : 'var(--text-secondary)';
+    b.onclick = () => { fstate.animationType = key; buildAnimPicker(); };
+    wrap.appendChild(b);
+  });
+}
+
+// ------------------------------------------------------------
+//  Ceremony
+// ------------------------------------------------------------
+function startCeremony() {
+  fstate.cursor = 0;
+  fstate.results = [];
+  showScreen('ceremonyScreen');
+  prepareStep();
+}
+
+function prepareStep() {
+  $('inputBlock').style.display = 'flex';
+  $('resultBlock').style.display = 'none';
+  $('personName').value = '';
+  $('stepTag').textContent = `Spin ${fstate.cursor + 1} of ${fstate.steps.length}`;
+  $('sortBtn').disabled = false;
+  $('personName').focus();
+}
+
+// Resolve which house this step produces. For a set, pick at random from
+// whatever is still unassigned in that set and remove it, so the pair really
+// is a coin flip from each person's point of view while the set as a whole is
+// guaranteed. For an open spin, pick at random from the allowed houses.
+function resolveStep(step) {
+  if (step.kind === 'pool') {
+    const pool = fstate.pools[step.poolId];
+    if (!pool || pool.length === 0) return Math.floor(Math.random() * fstate.houses.length);
+    const k = Math.floor(Math.random() * pool.length);
+    return pool.splice(k, 1)[0];
+  }
+  const allowed = fstate.houses.map((h, i) => i).filter(i => !step.excluded.includes(i));
+  return allowed[Math.floor(Math.random() * allowed.length)];
+}
+
+async function doSpin() {
+  if (fstate.spinning) return;
+  const name = $('personName').value.trim();
+  if (!name) { $('personName').focus(); return; }
+
+  fstate.spinning = true;
+  $('sortBtn').disabled = true;
+
+  const step = fstate.steps[fstate.cursor];
+  const houseIdx = resolveStep(step);
+  const house = fstate.houses[houseIdx];
+
+  $('inputBlock').style.display = 'none';
+  $('stepTag').textContent = '';
+
+  try {
+    if (fstate.animationType === 'roller') {
+      await spinRoller(houseIdx);
+    } else {
+      $('animationStage').classList.add('visible');
+      await animations[fstate.animationType](houseIdx);
+      $('animationStage').classList.remove('visible');
+    }
+  } catch (err) {
+    console.error('Animation failed, going straight to the reveal:', err);
+    $('animationStage').classList.remove('visible');
+  } finally {
+    fstate.spinning = false;
+  }
+
+  showResult(house, name);
+  fstate.results.push({ name, house: house.name });
+}
+
+function showResult(house, name) {
+  const card = $('resultCard');
+  card.style.borderColor = house.color;
+  card.style.background = `linear-gradient(180deg, ${house.color}22, transparent)`;
+  $('resultName').textContent = name;
+  $('resultHouse').textContent = house.name;
+  $('resultHouse').style.color = house.color;
+
+  const wrap = $('resultLogoWrap');
+  wrap.innerHTML = '';
+  if (house.logoUrl) {
+    const img = document.createElement('img');
+    img.className = 'result-logo';
+    img.src = house.logoUrl;
+    img.alt = '';
+    wrap.appendChild(img);
+  } else {
+    const ph = document.createElement('div');
+    ph.className = 'result-placeholder';
+    ph.style.background = house.color;
+    ph.style.color = '#fff';
+    ph.textContent = house.name.charAt(0).toUpperCase();
+    wrap.appendChild(ph);
+  }
+
+  $('resultBlock').style.display = 'flex';
+  $('nextBtn').textContent = (fstate.cursor + 1 >= fstate.steps.length) ? 'Finish' : 'Next';
+
+  try {
+    confetti({ particleCount: 130, spread: 80, origin: { y: 0.6 }, colors: [house.color, '#c9a84c', '#ffffff'] });
+  } catch (e) { /* confetti is decoration, never fatal */ }
+}
+
+function nextPerson() {
+  $('rollerFrame').classList.remove('visible');
+  fstate.cursor++;
+  if (fstate.cursor >= fstate.steps.length) {
+    renderResults();
+    showScreen('doneScreen');
+    return;
+  }
+  prepareStep();
+}
+
+function renderResults() {
+  const body = $('resultsBody');
+  body.innerHTML = '';
+  fstate.results.forEach(r => {
+    const tr = document.createElement('tr');
+    const a = document.createElement('td'); a.textContent = r.name;
+    const b = document.createElement('td'); b.textContent = r.house;
+    tr.appendChild(a); tr.appendChild(b);
+    body.appendChild(tr);
+  });
+}
+
+// Enter key sorts, matching the main app
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  if (!$('ceremonyScreen').classList.contains('active')) return;
+  if ($('inputBlock').style.display !== 'none') doSpin();
+  else if ($('resultBlock').style.display !== 'none') nextPerson();
+});
+
+// ------------------------------------------------------------
+//  Boot
+// ------------------------------------------------------------
+const _params = new URLSearchParams(location.search);
+if (_params.get('sheet')) {
+  fstate.sheetId = _params.get('sheet');
+  localStorage.setItem('sortingWheel_sheetId', fstate.sheetId);
+}
+offerCache();
+</script>
+</body>
+</html>
