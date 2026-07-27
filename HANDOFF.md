@@ -3,8 +3,8 @@
 Technical notes for whoever picks this up next, human or Claude.
 Operational instructions live in `README.md`; this file is the code map.
 
-**Handoff version:** 1.6.0
-**App version at handoff:** `index.html` 1.7.0, `faculty.html` 1.0.0, `animations.js` 1.0.0, `animations.css` 1.0.0, `ellis.html` 1.1.0
+**Handoff version:** 1.7.0
+**App version at handoff:** `index.html` 1.8.0, `faculty.html` 2.0.0, `animations.js` 1.0.0, `sorting-wheel.css` 1.0.0, `ellis.html` 1.1.0
 **Session:** Rounds 1-2 of documented work. Claude instance name: **Trilby**
 — a hat that reads code instead of minds, for an app that sorts students into
 houses. Predecessors on other Jake projects: Fable, Stedman. Do not reuse.
@@ -153,6 +153,38 @@ If someone asks to "just add a manual override to the main app", the answer is
 
 ---
 
+## Shared stylesheet — sorting-wheel.css
+
+index.html's entire `<style>` block was extracted verbatim in v1.8.0 and both
+pages now `<link>` it. **One stylesheet is the requirement, not a convenience:**
+the faculty ceremony has to be visually indistinguishable from the student one,
+and two copies would drift on the first change.
+
+`animations.css` (a partial extraction from v1.7.0) was deleted and folded in.
+
+Verified after extraction: every class used in either page's markup, and every
+class added dynamically from either page's JS, resolves in the stylesheet.
+
+Two classes in index.html have no CSS rule — `role-sorter` and
+`logo-manager-item`. Both pre-date this work; `role-sorter` is harmless because
+gating is done with `.admin-only` / `body.role-admin`. Left alone.
+
+**State class names differ per component** and are easy to get wrong when writing
+a new page against this stylesheet:
+
+| Component | Active class |
+|---|---|
+| `.loading-overlay` | `.active` |
+| `.error-banner` | `.visible` |
+| `.toast` | `.show` |
+| `.screen` | `.active` |
+| `.roller-frame`, `.animation-stage` | `.visible` |
+
+`.error-banner` also expects an inner `#errorText` span and a close button —
+setting `textContent` on the banner itself destroys its structure.
+
+---
+
 ## Shared animation module
 
 `animations.js` + `animations.css` hold the eight ceremony animations, used by
@@ -215,6 +247,31 @@ module.
 
 ---
 
+## Faculty page structure
+
+`faculty.html` mirrors index.html's `#ceremonyScreen` **markup structure
+element for element**: `colorWash`, `ceremony-header`, `ceremony-stage` with
+`readyState` / `inputState` / `rollerFrame` / `animationStage` / `resultState`,
+then the `anim-picker` and a bottom drawer. `showResult()` is a faithful copy
+including the colour wash and the luminance correction on the house name.
+
+**A hard-won lesson: copy the markup, don't reconstruct it.** The first version
+of this page invented the roller frame structure from the CSS class names. The
+result rendered as a full-screen light-blue chevron — the roller pointers with no
+correctly-sized parent. Nothing in jsdom catches that, because the DOM is valid
+and the animations all resolve; it's purely a layout failure. If you build a
+third page, copy the ceremony markup verbatim from index.html and change only the
+IDs you must.
+
+Deliberate differences, all invisible during the ceremony:
+
+- `studentName` / `studentNumber` become a single `personName` input.
+- `approveBtn` says "Next" and calls `acceptSpin()` — no spreadsheet write.
+- A `role-badge` reading `Faculty` sits in the header.
+- The admin drawer is a single tab that opens the queue modal.
+- `setCeremonyPhase` also hides the drawer outside the ready phase, so there is
+  nothing to tap mid-ceremony.
+
 ## Faculty queue model
 
 `faculty.html` flattens the queue into `fstate.steps`, each either:
@@ -224,8 +281,14 @@ module.
   gets which house is a genuine coin flip.
 - `{kind:'free', excluded:[idx]}` — random among the houses not excluded.
 
+With **no queue entry at all** (the default), the spin is an even chance across
+every house. The queue is optional; an empty queue makes this a plain wheel, and
+once the queue is exhausted spins return to even chance.
+
 Resolving at spin time rather than shuffling up front is deliberate: it keeps the
-randomness live, and `describeStep` can show what's left.
+randomness live, `describeStep` can show what's left, and `returnStep()` can undo
+a draw when the operator hits Re-sort — otherwise re-spinning someone would
+silently consume one of the reserved houses.
 
 Tested over 20,000 runs of admin's actual request (set of Callidus+Princeps, then
 an open spin excluding Vevaios): the pair appears 100% of the time, order splits
