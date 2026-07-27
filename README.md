@@ -11,7 +11,7 @@ spreadsheet — not the browser — is the source of truth.
 **Short link for staff:** https://sortingwheel.misterwilson.org/ellis.html
 **The spreadsheet:** https://docs.google.com/spreadsheets/d/1rYZ71el1yPjo1X7F71nI8WQ9LvCqY4g7r-iXr5IYQqE/edit
 
-Current version: **1.6.0**
+Current version: **1.6.2**
 
 ---
 
@@ -19,66 +19,70 @@ Current version: **1.6.0**
 
 | File | Version | What it is |
 |---|---|---|
-| `index.html` | 1.6.0 | The entire app. HTML + CSS + JS in one file, no build step. |
+| `index.html` | 1.6.2 | The entire app. HTML + CSS + JS in one file, no build step. |
 | `ellis.html` | 1.1.0 | Redirect page. Forwards to `index.html?sheet=<Ellis sheet ID>` so staff only have to remember one short URL. |
 | `config.js` | — | Firebase project keys (`categorizingcougar`). Safe to be public; Firebase web config is designed to be. |
 | `CNAME` | — | GitHub Pages custom domain: `sortingwheel.misterwilson.org` |
-| `README.md` | 1.2.0 | This file. |
-| `HANDOFF.md` | 1.2.0 | Technical notes for the next developer / Claude session. |
+| `README.md` | 1.5.0 | This file. |
+| `HANDOFF.md` | 1.5.0 | Technical notes for the next developer / Claude session. |
 
 Deployment is GitHub Pages. Upload the changed file through the GitHub web UI
 and it is live in about a minute. There is no build, no CLI, no bundler.
 
 ---
 
-## 1a. Security — who can see the student data
+## 1a. Access and permissions
 
-Short answer: **nothing in this repo grants access to your spreadsheet.** But
-there is one setting you should verify, and it matters.
+Sharing on the spreadsheet is set to **Restricted** — only people added
+individually can open it. That's correct and should stay that way. The sheet ID
+appears in `ellis.html` in a public repo, so "Anyone with the link" would
+effectively publish student data to anyone who found the repo.
 
-**How the app reads a spreadsheet that's behind a login.** It doesn't have its
-own access. When a staff member signs in with Google, the app requests an OAuth
-token *as that person*, and every read and write happens under their Google
-account. The app is a courier, not a key holder. Nobody who isn't already
-permitted to open the Sheet can get anything through it.
+### Adding a new person takes TWO steps
 
-**The Firebase keys in `config.js` are not secrets.** Firebase web API keys are
-public identifiers by design — they tell Google which project a request belongs
-to. They do not authorise data access. Every Firebase web app ships them in
-plain sight.
+This is the one thing that will bite you. Adding someone in one place and not
+the other looks like a broken app.
 
-**The spreadsheet ID is not a secret either.** It's an address, like a URL.
-Knowing it does not grant access; without Drive permission you get an error.
+| Step | Where | What it does |
+|---|---|---|
+| 1 | Spreadsheet → **Share** → add as **Editor** | Grants actual access. Without this they cannot record a sort. |
+| 2 | `Users` tab → add email + role | Sets their role (`admin` or `sorter`). Without this they see "Not Authorized". |
 
-**Nothing student-identifying is in the code, this README, or HANDOFF.md.**
-I checked. No names, no student numbers, no demographics — only house totals.
+Symptoms of getting it half-right:
 
-### The one thing to go check right now
+- **Share but no `Users` row** → they sign in and land on the "Not Authorized"
+  screen.
+- **`Users` row but no Share** → they get in, then hit "You don't have access to
+  this spreadsheet."
 
-Open the spreadsheet → **Share** → look at "General access."
+Removing someone also takes both steps. Pulling the `Users` row alone leaves
+them with Drive access to the raw student data.
 
-- If it says **Restricted** — you're fine. Only the people you've explicitly
-  added can see it. Stop here.
-- If it says **Anyone with the link** — fix this today. The sheet ID is in
-  `ellis.html` in a public repo, so "anyone with the link" effectively means
-  anyone who finds the repo, including students. Change it to Restricted and
-  add your station staff individually as Editors.
+### How the app reads a spreadsheet that's behind a login
 
-That share setting is the entire security boundary for this system. Everything
-else is bookkeeping.
+It has no access of its own. When someone signs in with Google, the app requests
+an OAuth token *as that person*, and every read and write runs under their
+account. The app is a courier, not a key holder. This is why Drive sharing is
+the real security boundary and the `Users` tab is only role assignment.
 
-### Two smaller things worth knowing
+### What is and isn't a secret
 
-**The app asks for broad spreadsheet permission.** It requests the
-`spreadsheets` scope, which technically covers every spreadsheet the signed-in
-person can reach, not just this one. That's normal for this kind of tool and the
-app only ever touches the one sheet — but it does mean anyone with write access
-to the GitHub repo could change what the page does with staff credentials. Keep
-the repo's collaborator list short.
+- **The Firebase keys in `config.js` are not secrets.** Firebase web API keys are
+  public identifiers by design — they route requests to a project, they don't
+  authorise data access. Every Firebase web app ships them in plain sight.
+- **The spreadsheet ID is not a secret.** It's an address. Knowing it grants
+  nothing without Drive permission.
+- **Nothing student-identifying is in the repo or in these docs.** Only house
+  totals.
 
-**Check your Firebase Storage rules** at some point. That's where house and
-school logos live. If the rules are wide open, a stranger could upload junk. No
-student data is there, so this is housekeeping, not urgent.
+Two things worth a look if you're ever auditing this:
+
+- The app requests the broad `spreadsheets` OAuth scope, which technically covers
+  every spreadsheet the signed-in person can reach. Normal for this kind of tool,
+  but it means anyone with write access to the GitHub repo could change what the
+  page does with staff credentials. Keep the collaborator list short.
+- Firebase Storage rules govern the logo files. No student data there, so this is
+  housekeeping rather than risk.
 
 ---
 
@@ -86,6 +90,26 @@ student data is there, so this is housekeeping, not urgent.
 
 Four tabs. **The tab names and the row positions matter** — the app reads
 fixed cell ranges, not headers by name.
+
+### Where every number lives
+
+Two numbers get confused with each other. They are not the same kind of thing
+and they never combine.
+
+| | What it is | Where it lives | Who sets it |
+|---|---|---|---|
+| **Population** | how many students are in each house *right now* | `Counts!B2:B5` | formula |
+| **Target** | the per-house goal the app aims at (141) | `Config` tab, key `target_per_house` | the app, when an admin enters a class size |
+
+`Counts!B` must account for **every** enrolled student, but
+`COUNTIF(Roster!C:C, …)` only sees students this app sorted. Anyone placed by the
+old physical wheel is invisible to it. Closing that gap is what §4 step 2 is
+about.
+
+The target is a goal, not a quantity of students. It is never added to a count.
+Both sorting modes read `Counts!B`; only Even Target mode reads
+`target_per_house`. **A wrong population breaks both modes** — the slider would
+think every house was empty and therefore already even.
 
 ### `Config` tab
 
@@ -119,14 +143,50 @@ The app writes directly to `B4`, `B5`, `B6`, and `C9`+ when you change logos or
 the balance slider, so **do not insert or delete rows above row 9.** Doing so
 silently repoints those writes at the wrong cells.
 
-### `Roster` tab — the actual record
+### How the `Roster` tab actually works
+
+This sheet is a **worksheet for the Sorting Wheel, not the system of record.**
+House assignments live in a separate master list owned by the staff who maintain
+grade-level rosters, and that list changes all year as students move in and out
+of the area. The Sorting Wheel needs a live, accurate count at all times, so it
+links to that master list rather than keeping its own copy.
+
+Mechanically, the `Roster` tab is a hybrid:
+
+| Rows | Content | Nature |
+|---|---|---|
+| 1 | header | static |
+| 2 – ~600 | mirror of the master house list via `IMPORTRANGE` (anchored around `G1`), reshaped into Roster columns by formulas such as `=I2&" "&H2` | **formulas — do not overwrite** |
+| below the block | students sorted by this app | static values appended by the app |
+
+`COUNTIF(Roster!C:C, …)` therefore sees **both** the mirrored students and the
+app-sorted ones, which is why counts are correct with no baseline column and no
+manual bookkeeping.
+
+Two things follow that are easy to get wrong:
+
+- **The append boundary is defined by data, not by row number.** Google's
+  `values.append` writes after the last row containing anything. Column D of the
+  mirror block holds `Original Wheel` filled all the way down, which is what
+  pushes appends safely past the formulas. Verified in practice: with the block
+  filled to row 400, a test student landed at row 401 and the count incremented
+  correctly.
+- **A student can briefly be counted twice** — once as an app-appended row, once
+  in the mirror — if the master list is updated while sorting is still going on.
+  Harmless at this scale, but if you want the counts perfectly tight during the
+  event, have master-list entry happen afterwards rather than in parallel.
+
+### `Roster` tab — column layout
 
 | A | B | C | D | E |
 |---|---|---|---|---|
 | Name | Student # | House | Sorted By | Timestamp |
 
-One row appended per confirmed sort. Row 1 is the header and **must stay**
-(see §4, step 4).
+Row 1 is the header and must stay. Within the mirror block these columns are
+formula-derived; below it, the app appends one static row per confirmed sort.
+
+**Column E is how you tell the two apart.** Mirrored rows have no timestamp;
+app-sorted rows do. That's the discriminator for the annual cleanup in §4 step 2.
 
 ### `Counts` tab — derived, do not hand-edit
 
@@ -137,8 +197,16 @@ One row appended per confirmed sort. Row 1 is the header and **must stay**
 | `=Config!A10` | `=COUNTIF(Roster!C:C, A3)` |
 | …one row per house | |
 
-These formulas are what the app reads to display counts and to compute
-sorting odds. If a count looks wrong, check these formulas first.
+These formulas are what the app reads to display counts and to compute sorting
+odds. If a count looks wrong, check these formulas first, then check that the
+`IMPORTRANGE` on the `Roster` tab is still resolving.
+
+As of v1.6.2 the app validates what it reads here. If a cell returns `#REF!`,
+`#N/A`, or a blank, it retries once (to ride out a transient `Loading...` while
+`IMPORTRANGE` recalculates) and then **blocks sorting** with an explanatory
+error. Previously an unreadable count was silently read as `0`, which made the
+app think every house was empty and already even — it would have sorted at pure
+random with no visible symptom.
 
 ### `Users` tab
 
@@ -198,43 +266,33 @@ Open the Sheet → File → Make a copy → name it
 `Sorting Wheel Backup <today's date>`. Do this before touching anything. It is
 your only undo.
 
-**2. Load the current school-wide house counts. This is the critical step.**
+**2. Refresh the `Roster` mirror block.**
 
-The rising 7th and 8th graders were sorted by the old physical wheel, so their
-house assignments live in your source spreadsheet, not this one. The app needs
-those numbers or it has nothing to correct.
+Read "How the Roster tab actually works" in §2 first if you haven't.
 
-The efficient way is a **baseline column** on the `Counts` tab. No code change,
-no student names — just four numbers.
+Short version: rows 2 through ~600 are formulas mirroring the master house list
+via `IMPORTRANGE`. The app appends new students *below* that block. Counts are
+always live and correct without anything hand-typed.
 
-Working from the counts as of July 2026 (current 6th and 7th grade; 8th grade
-already removed):
+For a new registration year:
 
-| House | current 6th | current 7th | **baseline** |
-|---|---|---|---|
-| Accomodore | 42 | 57 | **99** |
-| Callidus | 49 | 36 | **85** |
-| Princeps | 46 | 51 | **97** |
-| Vevaios | 79 | 23 | **102** |
-| | | | **383 total** |
+- **Delete the previous year's appended rows.** These are the static rows below
+  the mirror block — the ones with a real timestamp in column E. As students get
+  entered into the master house list by the staff who own it, they reappear
+  inside the mirror block automatically, so their static row is now a duplicate
+  and must go.
+- **Extend the fill-down if needed.** The mirror formulas currently run to row
+  600. They need to reach past the largest the master list will ever get. Extend
+  before registration, not during.
+- **Confirm the counts.** Open the app, expand Ceremony Controls, and check the
+  four house numbers against real enrolment. This is the only verification that
+  matters — everything downstream depends on it.
 
-So:
-
-- In `Counts!C1`, type: `Baseline (pre-app students still enrolled)`
-- In `Counts!C2:C5`, enter `99`, `85`, `97`, `102` — **in the same house order
-  as column A**. Check that order before typing; if column A reads Accomodore /
-  Callidus / Princeps / Vevaios you're fine.
-- Change `Counts!B2` from `=COUNTIF(Roster!C:C, A2)` to
-  `=COUNTIF(Roster!C:C, A2) + C2`
-- Do the same for `B3`, `B4`, `B5` (referencing `C3`, `C4`, `C5`).
-
-The app reads columns A and B only and never writes to the `Counts` tab, so
-column C is entirely safe. This also keeps `Roster` meaning exactly one thing —
-students this app sorted.
-
-Note that **you do not need to bump everyone up a grade for the app to work.**
-The app only reads house totals; grade labels are your own bookkeeping. Do the
-grade promotion whenever it suits you.
+> **Don't shorten the fill-down block.** Google's append lands immediately after
+> the last row containing data. Column D of the mirror block is filled with
+> `Original Wheel` all the way down, which is what marks that boundary. Shorten
+> the block or clear column D and the next appended student can land *inside* the
+> mirror rows.
 
 **3. Sanity check the numbers before you trust them.**
 Open the app as an admin and expand Ceremony Controls. The four house counts
@@ -297,26 +355,59 @@ As of v1.6.0 there are two methods, toggled in Ceremony Controls (admin only).
 The setting is saved to the spreadsheet, so all stations follow whichever is
 selected.
 
+### Where the controls are
+
+Bottom of the ceremony screen there's a drawer tab reading **Ceremony
+Controls** — tap it to expand. The right-hand column holds **Sorting Method**:
+two buttons, `Chance / Balance` and `Even Target`. Admin only; sorters never see
+it. Picking Even Target reveals a **Students still to sort** box.
+
+Both settings save to the spreadsheet, so every station follows whichever is
+selected. You can change either one at any point, including mid-registration.
+
 ### Even Target (recommended)
 
-Enter **how many students are still to be sorted** — 181 for this registration.
-The app fixes a per-house target at that moment and then weights each spin by
-how many places each house still needs.
+Type in how many students are **still to be sorted**. The app fixes a per-house
+target at that moment and weights each spin by how many places each house still
+needs. The readout underneath shows the target and the remaining need per house,
+so you can always see what it's aiming at.
 
-With your numbers: 383 currently enrolled + 181 incoming = 564, so the target is
-**141 per house**. That means Accomodore needs 42, Callidus 56, Princeps 44,
-Vevaios 39. The odds stay near-constant all night — roughly Accomodore 23%,
-Callidus 31%, Princeps 24%, Vevaios 22%.
+The label says "still to sort", not "class size", deliberately: it means the
+same thing at the start of the day (all of them) and halfway through (the ones
+left), so you can retype it whenever your estimate firms up.
 
-Because those four numbers are close together, the ceremony reads as luck. I ran
-2,000 full simulated registrations through the actual shipped code:
+### Your estimate does not need to be right
 
-- Final house totals: **141 / 141 / 141 / 141, every single time.** Gap of zero.
-- Longest run of the same house anywhere in 181 sorts: 4.5 on average, 11 at the
-  very worst.
+This is the important part, and it's counterintuitive: **guess low.**
 
-The "Students still to sort" figure is also the mid-event correction knob. If
-you've done 100 and 60 are left, type 60 and the target recomputes correctly.
+Over-estimating hurts. Under-estimating costs almost nothing. When more students
+turn up than expected, every house reaches target and the app falls back to
+straight balance-chasing, which keeps things level. When fewer turn up, every
+house is left proportionally short and Callidus — needing the most — stays
+furthest behind.
+
+Final school-wide gap, 2,000 simulated registrations per cell, run through the
+actual shipped code:
+
+| you enter | 150 arrive | 181 arrive | 200 arrive | 220 arrive |
+|---|---|---|---|---|
+| **150** | **1.2** | **2.1** | **2.1** | **2.1** |
+| 181 | 5.8 | 0.0 | 2.1 | 2.1 |
+| 200 | 7.4 | 4.4 | 1.0 | 2.0 |
+
+Entering 150 is never worse than a gap of about 2, whatever actually happens.
+Entering 200 and having 150 show up leaves a gap of 7 — worse than the 17-student
+imbalance you're trying to correct is not, but bad enough to waste a year.
+
+Going lower still costs nothing measurable. Entering 100 when 181 arrive gives a
+gap of 2.1 and identical streak lengths. So there's no penalty for being
+conservative.
+
+**Recommendation: enter 150 on the morning.** If the day is clearly busier and
+you want the extra precision, retype the remaining count once you know it —
+say 60 when 60 are left. The app re-reads counts from the spreadsheet before
+recomputing, so it's safe to do this from any station even if that station has
+been idle.
 
 ### Chance / Balance slider (the original)
 
@@ -331,10 +422,11 @@ that even slider 50 finishes with a gap of about 4. If you fall back to it,
 
 ### Which to use
 
-Use Even Target. It is strictly better on every measure I could test: exact
-convergence, shorter streaks, and less front-loading. The slider is there so
-that if anything feels wrong on the night you can switch back mid-event with one
-tap — I tested switching partway through and both modes still finish level.
+Use Even Target with 150 entered. It is strictly better on every measure I could
+test: near-exact convergence, shorter streaks, and less front-loading. The slider
+is there so that if anything feels wrong on the night you can switch back
+mid-event with one tap — I tested switching partway through and both modes still
+finish level.
 
 One note: **expect roughly 31% Callidus this year, not 90%.** Your spring test
 ran against a much bigger Callidus deficit. With the 8th graders gone, Vevaios
@@ -385,32 +477,29 @@ mid-ceremony.
 
 ## 8. Every summer after this one
 
-Once the baseline column from §4 step 2 is in place, the annual rollover is
+The link to the master house list does the heavy lifting, so the rollover is
 short:
 
-1. Back up the sheet.
-2. Work out the new baseline: current house counts for students who will still
-   be enrolled next year. That is last year's baseline, plus the students this
-   app sorted, minus the graduating class.
-3. Update `Counts!C2:C5` with those four numbers.
-4. Optionally archive the previous year's `Roster` rows to a dated tab so the
-   Roster stays readable, and fold their counts into the baseline. If you do
-   this, the baseline and the Roster must not double-count anybody — that's the
-   one arithmetic mistake to watch for.
-5. Verify the counts in Ceremony Controls before sorting anybody.
+1. Back up the sheet (File → Make a copy).
+2. Delete last year's app-appended rows — the static ones below the mirror block
+   with a timestamp in column E. Those students now appear inside the mirror
+   block instead, so keeping both double-counts them.
+3. Extend the mirror fill-down if the master list has outgrown it. Never shorten
+   it (see the append-boundary warning in §4 step 2).
+4. Open the app and confirm the four house counts match real enrolment.
+5. Set the sorting method and class size for the new registration (§5).
 
-The one thing that makes step 2 easier is knowing which Roster rows belong to
-which graduating class. Right now the only signal is the Timestamp column. Ask
-about adding a `Class Of` column if this becomes annoying — see HANDOFF.md.
-
----
+No baseline numbers to maintain, no grade column to keep current — the master
+list is the source of truth and the mirror keeps up with it automatically.
 
 ## 9. Known limitations
 
 - No edit or undo inside the app. Corrections happen in the spreadsheet.
 - No duplicate detection at sort time. Use the conditional formatting in §7.
-- No grade or graduation-year column on the Roster, so identifying a specific
-  cohort later means going by Timestamp.
+- Identifying which app-sorted rows belong to which year means going by the
+  Timestamp column; there's no explicit cohort marker.
+- The mirror block has a fixed length (currently ~600 rows) and needs manual
+  extension if the master list outgrows it.
 - Google sessions last about an hour; long events need a re-sign-in.
 - Counts are read at the moment each sort begins. Two stations confirming
   within the same second both act on the same numbers. Harmless at this scale.
