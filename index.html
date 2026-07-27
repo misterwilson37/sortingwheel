@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sorting Wheel v1.6.1</title>
+<title>Sorting Wheel v1.6.2</title>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
@@ -1214,7 +1214,7 @@ body.show-probs .admin-count-card .count-prob { display: block; }
 // ============================================================
 //  CONFIG (loaded from config.js)
 // ============================================================
-const APP_VERSION = '1.6.1';
+const APP_VERSION = '1.6.2';
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 // ============================================================
@@ -1227,6 +1227,8 @@ const state = {
   sheetId: localStorage.getItem('sortingWheel_sheetId') || null,
   houses: [],      // [{name, color, logoUrl}]
   counts: [],      // [number] parallel to houses
+  countsValid: false,      // false if the Counts tab returned errors/blanks
+  countsProblem: '',       // human-readable description of what was unreadable
   schoolName: '',
   schoolColors: ['#003366'],
   schoolLogoUrl: null,
@@ -1768,13 +1770,61 @@ async function saveConfigKey(key, value) {
   if (m) state.configKeyRows[key] = parseInt(m[1]);
 }
 
-async function loadCounts() {
+// The Counts tab is formula-driven, and at Ellis those formulas sit downstream of
+// an IMPORTRANGE to the master house list — which is owned by other staff and is
+// the actual system of record. That link is intentional and permanent.
+//
+// Two consequences:
+//  1. If the import breaks (master sheet renamed, moved, permissions changed),
+//     COUNTIF returns #REF!/#N/A. Reading that as 0 via `parseInt(...) || 0` was
+//     the WORST silent failure available: the app concludes every house is empty
+//     and therefore already even, sorts at pure random, and says nothing.
+//  2. IMPORTRANGE also reports "Loading..." transiently while recalculating.
+//     That is NOT a breakage and must not stall a station mid-registration.
+//
+// So: detect unreadable values, retry once after a short pause, and only then
+// treat it as broken.
+async function readCountsOnce() {
   const data = await sheetsRequest(`/${state.sheetId}/values/Counts!A2:B${2 + state.houses.length}`);
   const rows = data.values || [];
-  state.counts = state.houses.map((h, i) => {
-    const row = rows[i];
-    return row ? parseInt(row[1]) || 0 : 0;
+  const bad = [];
+  const counts = state.houses.map((h, i) => {
+    const raw = rows[i] ? rows[i][1] : undefined;
+    const text = (raw === undefined || raw === null) ? '' : String(raw).trim();
+    if (text === '') { bad.push(`${h.name} (blank)`); return 0; }
+    const n = Number(text);
+    if (!Number.isFinite(n)) { bad.push(`${h.name} (${text})`); return 0; }
+    return Math.max(0, Math.round(n));
   });
+  return { counts, bad };
+}
+
+async function loadCounts() {
+  let result = await readCountsOnce();
+
+  if (result.bad.length > 0) {
+    // Probably a transient recalculation. Give the sheet a moment and re-ask.
+    await new Promise(r => setTimeout(r, 1600));
+    const retry = await readCountsOnce();
+    if (retry.bad.length === 0) {
+      console.log('Counts recovered on retry (was likely IMPORTRANGE recalculating)');
+    }
+    result = retry;
+  }
+
+  state.counts = result.counts;
+  state.countsValid = (result.bad.length === 0);
+  state.countsProblem = result.bad.join(', ');
+
+  if (!state.countsValid) {
+    showError(
+      'House counts could not be read from the spreadsheet: ' + state.countsProblem
+      + '. Sorting is blocked, because the app cannot balance houses without them. '
+      + 'Open the Counts tab \u2014 if a cell shows #REF! or #N/A, the link to the '
+      + 'master house list has broken. Fix it, then press Refresh Counts.'
+    );
+  }
+  return state.countsValid;
 }
 
 async function loadUsers() {
@@ -2272,6 +2322,16 @@ async function startSort() {
   // the student watches a 6-second animation that then fails to save.
   if (!isTokenLikelyValid()) {
     showError('This station\u2019s Google session has expired. Click Sign Out, sign back in, then re-enter this student. Nothing has been lost.');
+    return;
+  }
+
+  // PRE-FLIGHT: refuse to sort on unreadable counts. Sorting anyway would look
+  // like it worked while quietly ignoring house balance entirely.
+  if (!state.countsValid) {
+    showError(
+      'Cannot sort: house counts are unreadable (' + (state.countsProblem || 'unknown')
+      + '). Fix the Counts tab, then press Refresh Counts.'
+    );
     return;
   }
 
@@ -3660,6 +3720,6 @@ $('versionLabel').textContent = `v${APP_VERSION}`;
 // before Firebase auth is initialised. See "RESOLVE WHICH
 // SPREADSHEET THIS STATION USES".
 </script>
-<!-- Sorting Wheel v1.6.1 -->
+<!-- Sorting Wheel v1.6.2 -->
 </body>
 </html>
