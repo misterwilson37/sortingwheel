@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sorting Wheel v1.5.0</title>
+<title>Sorting Wheel v1.6.0</title>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
@@ -606,6 +606,28 @@ body {
   transform: translateX(-50%) translateY(0);
 }
 
+/* Sorting mode toggle */
+.mode-toggle { display: flex; gap: 6px; }
+.mode-btn {
+  flex: 1;
+  font-family: 'Outfit', sans-serif;
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  background: transparent;
+  border: 1.5px solid rgba(201,168,76,0.25);
+  color: var(--text-secondary);
+  transition: all 0.15s ease;
+}
+.mode-btn:hover { border-color: var(--accent-gold); color: var(--text-primary); }
+.mode-btn.active {
+  background: rgba(201,168,76,0.15);
+  border-color: var(--accent-gold);
+  color: var(--accent-gold);
+  font-weight: 600;
+}
+
 /* Role-based visibility */
 .admin-only { display: none !important; }
 body.role-admin .admin-only { display: initial !important; }
@@ -1091,11 +1113,23 @@ body.show-probs .admin-count-card .count-prob { display: block; }
       </div>
       <div class="admin-col admin-col-right admin-only">
         <div class="admin-section">
-          <h4>Ceremony Balance</h4>
-          <div class="balance-slider-wrap">
-            <span class="slider-icon" title="Pure chance">&#127922;</span>
-            <input type="range" class="balance-slider" id="balanceSlider" min="0" max="100" value="50" oninput="onBalanceChange()">
-            <span class="slider-icon" title="Even distribution">&#9878;</span>
+          <h4>Sorting Method</h4>
+          <div class="mode-toggle">
+            <button class="mode-btn" id="modeBtnSlider" onclick="setSortMode('slider')">Chance / Balance</button>
+            <button class="mode-btn" id="modeBtnTarget" onclick="setSortMode('target')">Even Target</button>
+          </div>
+          <div id="targetModeBox" style="display:none; margin-top:8px;">
+            <label style="font-size:12px; color:var(--text-secondary); display:block; margin-bottom:4px;">Students still to sort</label>
+            <input class="input-field" id="expectedIncoming" type="number" min="0" step="1"
+                   style="padding:6px 10px; font-size:13px;" onchange="onExpectedIncomingChange()">
+            <div id="targetModeInfo" style="font-size:11px; color:var(--text-muted); margin-top:6px; line-height:1.5;"></div>
+          </div>
+          <div id="sliderModeBox">
+            <div class="balance-slider-wrap">
+              <span class="slider-icon" title="Pure chance">&#127922;</span>
+              <input type="range" class="balance-slider" id="balanceSlider" min="0" max="100" value="50" oninput="onBalanceChange()">
+              <span class="slider-icon" title="Even distribution">&#9878;</span>
+            </div>
           </div>
           <button class="btn btn-ghost" onclick="toggleProbabilities()" style="font-size:12px; padding:4px 0; margin-top:4px; width:100%; text-align:center;" id="probToggleBtn">Show Probabilities</button>
         </div>
@@ -1180,7 +1214,7 @@ body.show-probs .admin-count-card .count-prob { display: block; }
 // ============================================================
 //  CONFIG (loaded from config.js)
 // ============================================================
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 // ============================================================
@@ -1198,6 +1232,10 @@ const state = {
   schoolLogoUrl: null,
   schoolLogoBg: '#ffffff',
   balanceSetting: 50,
+  sortMode: 'slider',      // 'slider' (chance<->balance) | 'target' (quota)
+  expectedIncoming: 0,     // what the admin typed; for display/audit only
+  targetPerHouse: 0,       // AUTHORITATIVE for target mode. Fixed constant, never derived live.
+  configKeyRows: {},       // { key: rowNumber } discovered during loadConfig
   currentSort: null, // {name, number, house}
   ceremonyPhase: 'ready', // ready | input | spinning | result
   animationType: 'roller', // roller | wheel | shields | particles
@@ -1649,6 +1687,16 @@ async function handleConnect() {
 // ============================================================
 //  LOAD CONFIG FROM SHEET
 // ============================================================
+//  The Config tab has fixed row positions for the original keys
+//  (rows 2-6) and the houses block (row 9 down). Newer settings are
+//  found by SCANNING for their key name anywhere on the tab, so they
+//  can live below the houses without disturbing anything above.
+//
+//  Because those keys sit below the houses, the house parser has to
+//  stop when it sees one — otherwise 'sort_mode' gets read as a house.
+// ============================================================
+const EXTRA_CONFIG_KEYS = ['sort_mode', 'expected_incoming', 'target_per_house'];
+
 async function loadConfig() {
   const data = await sheetsRequest(`/${state.sheetId}/values/Config!A1:C50`);
   const rows = data.values || [];
@@ -1668,12 +1716,29 @@ async function loadConfig() {
     if (key === '---houses---') continue;
   }
 
+  // Position-independent scan for the newer settings keys.
+  // Defaults are applied first so a sheet without these rows still works.
+  state.sortMode = 'slider';
+  state.expectedIncoming = 0;
+  state.targetPerHouse = 0;
+  state.configKeyRows = {};
+  for (let i = 0; i < rows.length; i++) {
+    const key = (rows[i][0] || '').toString().toLowerCase().trim();
+    if (!EXTRA_CONFIG_KEYS.includes(key)) continue;
+    const val = (rows[i][1] || '').toString().trim();
+    state.configKeyRows[key] = i + 1; // 1-based sheet row
+    if (key === 'sort_mode') state.sortMode = (val.toLowerCase() === 'target') ? 'target' : 'slider';
+    if (key === 'expected_incoming') state.expectedIncoming = parseInt(val) || 0;
+    if (key === 'target_per_house') state.targetPerHouse = parseFloat(val) || 0;
+  }
+
   // Parse houses
   state.houses = [];
   if (houseStartIdx >= 0) {
     for (let i = houseStartIdx; i < rows.length; i++) {
       const name = (rows[i][0] || '').trim();
       if (!name) break;
+      if (EXTRA_CONFIG_KEYS.includes(name.toLowerCase())) break; // settings row, not a house
       state.houses.push({
         name,
         color: rows[i][1] || '#666666',
@@ -1681,6 +1746,26 @@ async function loadConfig() {
       });
     }
   }
+}
+
+// Write a settings key back to the Config tab. If the row doesn't exist yet
+// it is appended and its position remembered, so the sheet self-heals and
+// nobody has to hand-add rows.
+async function saveConfigKey(key, value) {
+  const row = state.configKeyRows[key];
+  if (row) {
+    await sheetsRequest(`/${state.sheetId}/values/Config!A${row}:B${row}?valueInputOption=RAW`, {
+      method: 'PUT',
+      body: JSON.stringify({ values: [[key, String(value)]] })
+    });
+    return;
+  }
+  const res = await sheetsRequest(`/${state.sheetId}/values/Config!A:B:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
+    method: 'POST',
+    body: JSON.stringify({ values: [[key, String(value)]] })
+  });
+  const m = /!A(\d+)/.exec(res?.updates?.updatedRange || '');
+  if (m) state.configKeyRows[key] = parseInt(m[1]);
 }
 
 async function loadCounts() {
@@ -1793,6 +1878,7 @@ async function enterCeremony() {
 
     // Set balance slider from shared setting
     $('balanceSlider').value = state.balanceSetting;
+    refreshModeUI();
 
     // Preload all house logos so they're cached for the roller animation
     await preloadImages();
@@ -1880,14 +1966,134 @@ function calculateBlendedProbabilities(sliderValue) {
   return randomProbs.map((rp, i) => rp * (1 - t) + balanceProbs[i] * t);
 }
 
+// ============================================================
+//  TARGET MODE — spread the correction evenly
+// ============================================================
+//  The slider blend above is GREEDY: it aims at the current largest
+//  house, so the deficit it sees is biggest at the start of
+//  registration and the whole correction front-loads. That produces
+//  long visible runs of the same house early on.
+//
+//  Target mode instead weights by how many places each house still
+//  needs to reach a FIXED per-house target. Since "need remaining"
+//  and "students remaining" shrink together, the odds stay roughly
+//  constant through the whole event — same overall distribution,
+//  spread evenly, and it lands exactly even.
+//
+//  CRITICAL: the target is a STORED CONSTANT (state.targetPerHouse),
+//  not something recomputed from the running total. An earlier
+//  version computed it live as
+//      (currentTotal + expectedIncoming) / houseCount
+//  which made the target climb every time a student was recorded, so
+//  it never converged — it left an average gap of 10 instead of 0.
+//  The target is set once when an admin enters the class size, saved
+//  to Config, and left alone. Do not make it dynamic again.
+//
+//  If more students turn up than expected, every house reaches target,
+//  need hits zero everywhere, and we fall back to full deficit-balance
+//  so the extras keep the houses level rather than dividing by zero.
+// ============================================================
+function calculateTargetProbabilities() {
+  const counts = state.counts;
+  const n = counts.length;
+  if (n === 0) return [];
+
+  const target = state.targetPerHouse;
+  if (!target || target <= 0) return calculateBlendedProbabilities();
+
+  const need = counts.map(c => Math.max(0, target - c));
+  const needTotal = need.reduce((a, b) => a + b, 0);
+
+  if (needTotal <= 0) return calculateBlendedProbabilities(100);
+  return need.map(x => x / needTotal);
+}
+
+// Single source of truth for "what are the odds right now".
+// Used by both the sort itself and the probability display, so the
+// numbers an admin sees can never disagree with what actually happens.
+function currentProbabilities() {
+  if (state.sortMode === 'target' && state.targetPerHouse > 0) {
+    return calculateTargetProbabilities();
+  }
+  return calculateBlendedProbabilities();
+}
+
 function weightedSelect() {
-  const probs = calculateBlendedProbabilities();
+  const probs = currentProbabilities();
   let random = Math.random();
   for (let i = 0; i < probs.length; i++) {
     random -= probs[i];
     if (random <= 0) return i;
   }
   return probs.length - 1;
+}
+
+// ============================================================
+//  SORTING MODE — Shared via Spreadsheet
+// ============================================================
+function refreshModeUI() {
+  const isTarget = state.sortMode === 'target';
+  $('modeBtnSlider').classList.toggle('active', !isTarget);
+  $('modeBtnTarget').classList.toggle('active', isTarget);
+  $('targetModeBox').style.display = isTarget ? 'block' : 'none';
+  $('sliderModeBox').style.display = isTarget ? 'none' : 'block';
+  $('expectedIncoming').value = state.expectedIncoming || '';
+
+  if (isTarget) {
+    const info = $('targetModeInfo');
+    if (!state.targetPerHouse || state.targetPerHouse <= 0) {
+      info.textContent = 'Enter how many students are still to be sorted. Until then the Chance / Balance slider is used.';
+    } else {
+      const parts = state.houses.map((h, i) =>
+        `${h.name} ${Math.max(0, Math.round(state.targetPerHouse - (state.counts[i] || 0)))}`);
+      const left = state.houses.reduce((sum, h, i) =>
+        sum + Math.max(0, state.targetPerHouse - (state.counts[i] || 0)), 0);
+      info.textContent = `Target ${Math.round(state.targetPerHouse)} per house. `
+        + `Still to sort: ${Math.round(left)} \u2014 ${parts.join(', ')}.`;
+    }
+  }
+  updateProbabilities();
+}
+
+async function setSortMode(mode) {
+  state.sortMode = (mode === 'target') ? 'target' : 'slider';
+  refreshModeUI();
+  try {
+    await saveConfigKey('sort_mode', state.sortMode);
+    showToast(state.sortMode === 'target' ? 'Even Target mode' : 'Chance / Balance mode');
+  } catch (err) {
+    console.warn('Failed to save sort mode:', err);
+    showError('Mode changed on this station but could not be saved to the spreadsheet: ' + err.message);
+  }
+}
+
+// Entering a class size FIXES the per-house target from the counts as they
+// stand right now. Re-entering it later recomputes from the counts at that
+// moment, which is correct: the number means "students still to come."
+let expectedSaveTimer = null;
+function onExpectedIncomingChange() {
+  const val = Math.max(0, parseInt($('expectedIncoming').value) || 0);
+  state.expectedIncoming = val;
+
+  if (val > 0 && state.houses.length > 0) {
+    const currentTotal = state.counts.reduce((a, b) => a + b, 0);
+    state.targetPerHouse = (currentTotal + val) / state.houses.length;
+  } else {
+    state.targetPerHouse = 0;
+  }
+
+  refreshModeUI();
+  clearTimeout(expectedSaveTimer);
+  expectedSaveTimer = setTimeout(async () => {
+    try {
+      await saveConfigKey('expected_incoming', val);
+      await saveConfigKey('target_per_house', state.targetPerHouse.toFixed(2));
+      showToast(`Target set: ${Math.round(state.targetPerHouse)} per house`);
+    } catch (err) {
+      console.warn('Failed to save target settings:', err);
+      showError('Target set on this station but could not be saved to the spreadsheet: ' + err.message);
+    }
+  }, 600);
 }
 
 // ============================================================
@@ -1915,16 +2121,38 @@ async function saveBalanceSetting() {
   }
 }
 
+// Re-read every shared setting from the Config tab. Called before each sort so
+// that if one station changes the mode, slider, or class size, every other
+// station picks it up on its next student. Deliberately does NOT touch
+// state.houses — house data is loaded once in enterCeremony and re-reading it
+// mid-ceremony could swap logos out from under a running animation.
 async function loadBalanceSetting() {
   try {
-    const data = await sheetsRequest(`/${state.sheetId}/values/Config!A6:B6`);
-    const row = (data.values || [])[0];
-    if (row && row[0]?.toLowerCase().trim() === 'balance_setting') {
-      state.balanceSetting = parseInt(row[1]) || 50;
-      $('balanceSlider').value = state.balanceSetting;
+    const data = await sheetsRequest(`/${state.sheetId}/values/Config!A1:B50`);
+    const rows = data.values || [];
+    for (let i = 0; i < rows.length; i++) {
+      const key = (rows[i][0] || '').toString().toLowerCase().trim();
+      const val = (rows[i][1] || '').toString().trim();
+      if (key === 'balance_setting') {
+        state.balanceSetting = parseInt(val) || 50;
+        $('balanceSlider').value = state.balanceSetting;
+      }
+      if (key === 'sort_mode') {
+        state.configKeyRows['sort_mode'] = i + 1;
+        state.sortMode = (val.toLowerCase() === 'target') ? 'target' : 'slider';
+      }
+      if (key === 'expected_incoming') {
+        state.configKeyRows['expected_incoming'] = i + 1;
+        state.expectedIncoming = parseInt(val) || 0;
+      }
+      if (key === 'target_per_house') {
+        state.configKeyRows['target_per_house'] = i + 1;
+        state.targetPerHouse = parseFloat(val) || 0;
+      }
     }
+    refreshModeUI();
   } catch (err) {
-    console.warn('Failed to load balance setting:', err);
+    console.warn('Failed to load shared settings:', err);
   }
 }
 
@@ -2247,7 +2475,7 @@ function toggleProbabilities() {
 
 function updateProbabilities() {
   if (!document.body.classList.contains('show-probs')) return;
-  const probs = calculateBlendedProbabilities();
+  const probs = currentProbabilities();
   const maxProb = Math.max(...probs);
 
   probs.forEach((p, i) => {
@@ -3416,6 +3644,6 @@ $('versionLabel').textContent = `v${APP_VERSION}`;
 // before Firebase auth is initialised. See "RESOLVE WHICH
 // SPREADSHEET THIS STATION USES".
 </script>
-<!-- Sorting Wheel v1.5.0 -->
+<!-- Sorting Wheel v1.6.0 -->
 </body>
 </html>
