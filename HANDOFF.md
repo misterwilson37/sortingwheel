@@ -3,8 +3,8 @@
 Technical notes for whoever picks this up next, human or Claude.
 Operational instructions live in `README.md`; this file is the code map.
 
-**Handoff version:** 1.2.0
-**App version at handoff:** `index.html` 1.6.0, `ellis.html` 1.1.0
+**Handoff version:** 1.5.0
+**App version at handoff:** `index.html` 1.6.2, `ellis.html` 1.1.0
 **Session:** Rounds 1-2 of documented work. Claude instance name: **Trilby**
 — a hat that reads code instead of minds, for an app that sorts students into
 houses. Predecessors on other Jake projects: Fable, Stedman. Do not reuse.
@@ -60,6 +60,60 @@ Callidus is behind by only 17, so the correction needed this year is mild — ab
 31% Callidus, not the ~90% seen in the spring load-test. If someone reports
 "Callidus isn't getting enough students," check the numbers before assuming a
 bug.
+
+### SECOND INVARIANT — the Roster tab is a hybrid, by design
+
+**Do not "clean up" the `Roster` tab. Do not propose moving the `IMPORTRANGE`
+out of it. This was considered and rejected for good reasons.**
+
+The Sorting Wheel spreadsheet is a *worksheet*. House assignments are owned by
+other staff in a separate master list, and that list changes all year as students
+move in and out of the area. The Sorting Wheel cannot be the system of record and
+never will be, so it links to the master list instead of copying it.
+
+Layout:
+
+| Rows | Content |
+|---|---|
+| 1 | header |
+| 2 – ~600 | `IMPORTRANGE` mirror of the master list (anchored near `G1`), reshaped into Roster columns by formulas like `=I2&" "&H2` |
+| below | static rows appended by the app |
+
+`COUNTIF(Roster!C:C, …)` sees both, so counts are live and correct with **no
+baseline column and no hand-typed numbers.** An earlier draft of this file
+recommended a hand-typed baseline in `Counts!C`. That was wrong — it came from
+not knowing the mirror existed. Ignore any such advice.
+
+**Verified empirically by Jake, not by me:** with the mirror filled to row 400, a
+test sort appended at row 401 and the Accomodore count incremented correctly.
+Google's `values.append` lands after the last row containing data, and column D
+of the mirror is filled with `Original Wheel` all the way down, which is what
+marks that boundary. **Shortening the mirror block or clearing column D would let
+appends land inside the formula rows.** That is the fragile edge — not the mirror
+itself.
+
+Annual cleanup: delete the app-appended static rows (identifiable by a timestamp
+in column E; mirrored rows have none) once those students appear in the master
+list, or they get double-counted.
+
+### Population vs target — do not confuse these
+
+They get conflated because both are "numbers about houses." They are different
+kinds of thing and never combine.
+
+| | Meaning | Storage | Written by |
+|---|---|---|---|
+| Population | students in each house now | `Counts!B2:B5` | sheet formula |
+| Target | per-house goal (141) | `Config` key `target_per_house` | app, on admin input |
+
+`calculateTargetProbabilities()` reads population from `state.counts` and
+compares it against `state.targetPerHouse`. The target is a finish line, not a
+quantity to distribute — never add it to a count.
+
+**A wrong population breaks BOTH modes**, not just target mode. Slider mode reads
+the same `Counts!B`; if it under-reports, the slider concludes every house is
+already even and stops correcting. If someone reports "balancing isn't doing
+anything," check `Counts!B` against real enrolment before touching the algorithm.
 
 ### Baseline counts
 
@@ -220,6 +274,49 @@ from live counts. **Do not make it dynamic again.**
 
 Lesson worth keeping: simulate the shipped function, not your mental model of it.
 
+### Count validation (v1.6.2)
+
+Because `Counts!B` sits downstream of an `IMPORTRANGE` to a sheet Jake does not
+control, a rename or permission change on the master list breaks it. `loadCounts`
+previously did `parseInt(row[1]) || 0`, so `#REF!` became `0` — and all-zero
+counts make the app conclude every house is empty and already even. It would have
+sorted at pure random, silently, with the balancing feature appearing to work.
+
+`loadCounts` now rejects anything non-numeric, **retries once after 1.6s**, and
+only then sets `state.countsValid = false` and shows an error. `startSort`
+refuses to run while counts are invalid.
+
+The retry exists specifically because `IMPORTRANGE` reports `Loading...`
+transiently during recalculation, and blocking a station for that would be worse
+than the bug. Tested: transient `Loading...` recovers and the station keeps
+working; a persistent `#REF!` blocks with a clear message; recovery via Refresh
+Counts restores normal sorting. See `test_retry.js`.
+
+Do not "simplify" this back to a single read.
+
+### Estimate sensitivity — asymmetric, and it matters
+
+`target_per_house` depends on an admin's guess at attendance. That guess is
+wrong-tolerant in one direction only:
+
+| entered | 150 arrive | 181 | 200 | 220 |
+|---|---|---|---|---|
+| 150 | 1.2 | 2.1 | 2.1 | 2.1 |
+| 181 | 5.8 | 0.0 | 2.1 | 2.1 |
+| 200 | 7.4 | 4.4 | 1.0 | 2.0 |
+
+Overshoot is self-healing: houses hit target, `needTotal` goes to 0, and the
+`calculateBlendedProbabilities(100)` fallback drives the gap toward zero.
+Undershoot is not: every house ends proportionally short and the neediest house
+stays furthest behind.
+
+So **advise a deliberately low figure.** Entering 100 when 181 arrive still gives
+a gap of 2.1 with identical streak lengths — there is no measurable penalty for
+being conservative, and a real one for optimism. README §5 says enter 150.
+
+If anyone proposes "helpfully" defaulting this to a best-guess class size,
+default it LOW.
+
 ### Config keys and semantics
 
 | Key | Meaning |
@@ -239,6 +336,13 @@ fifth house. That guard is why appending is safe; don't remove it.
 The input is labelled **"Students still to sort"**, not "class size". This is
 deliberate: re-entering it mid-event recomputes the target from current counts,
 which is only correct if the number means students remaining.
+
+`onExpectedIncomingChange()` calls `loadCounts()` before computing the target
+(v1.6.1). An admin may set this from a station whose counts are stale while
+another station has been sorting for half an hour; computing from stale counts
+would set the target too low and under-fill every house. The provisional value
+shown immediately uses cached counts for responsiveness, then the debounced
+handler corrects it against the sheet.
 
 `loadBalanceSetting()` was widened from `Config!A6:B6` to `A1:B50` and now
 refreshes mode, target, and slider before every sort, so a mode change on one
