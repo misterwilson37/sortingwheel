@@ -3,8 +3,8 @@
 Technical notes for whoever picks this up next, human or Claude.
 Operational instructions live in `README.md`; this file is the code map.
 
-**Handoff version:** 1.5.0
-**App version at handoff:** `index.html` 1.6.2, `ellis.html` 1.1.0
+**Handoff version:** 1.6.0
+**App version at handoff:** `index.html` 1.7.0, `faculty.html` 1.0.0, `animations.js` 1.0.0, `animations.css` 1.0.0, `ellis.html` 1.1.0
 **Session:** Rounds 1-2 of documented work. Claude instance name: **Trilby**
 — a hat that reads code instead of minds, for an app that sorts students into
 houses. Predecessors on other Jake projects: Fable, Stedman. Do not reuse.
@@ -130,6 +130,107 @@ and the app **never writes to the Counts tab** after initial creation
 
 Consequence: `Roster` row count is *not* the school population. It is only the
 students this app sorted. Anything that needs true totals must read `Counts!B`.
+
+---
+
+## THIRD INVARIANT — faculty rigging stays out of the student app
+
+`faculty.html` produces **predetermined** house assignments for new staff. That
+capability must never be merged into `index.html`, and no "set specific outcomes"
+mode may be added to the student app.
+
+The reason is a single forgotten toggle. Any rigging setting reachable from the
+student ceremony — especially one stored in `Config`, which is shared across every
+station — would be one oversight away from silently rigging real student sorting,
+with no visible symptom. A separate page cannot make that mistake.
+
+Faculty are also deliberately absent from the house counts. `faculty.html` never
+reads `Counts` and never writes to `Roster`. It signs in read-only, purely to
+fetch house names/colours/logos from `Config`.
+
+If someone asks to "just add a manual override to the main app", the answer is
+`faculty.html`.
+
+---
+
+## Shared animation module
+
+`animations.js` + `animations.css` hold the eight ceremony animations, used by
+both pages. Extracted in v1.7.0 so the faculty page didn't need a second copy of
+704 lines that would drift.
+
+No build step. `animations.js` is a classic script that installs a factory:
+
+```js
+window.createSortingWheelAnimations = function (deps) { ... }
+```
+
+Host pages wire it up once `$` exists:
+
+```js
+const _sw = createSortingWheelAnimations({ $, getHouses: () => state.houses });
+const ANIMATION_META = _sw.ANIMATION_META;
+const animations     = _sw.animations;
+const spinRoller     = _sw.spinRoller;
+```
+
+**Dependencies are injected, never reached for globally.** The module must not
+reference `state`, `firebase`, the spreadsheet, or page-specific DOM beyond:
+
+- required from the host page: `animationStage`, `rollerFrame`, `rollerStrip`
+- created by the animations themselves: `shieldRow`, `shuffleArena`, `bracketStage`
+
+That constraint is the whole point — it's what stops the faculty page from being
+able to break the student page.
+
+Notes on the extraction:
+
+- `state.houses` became `getHouses()` — 28 substitutions.
+- `pulseElement` was a nested function inside `animateBracket`, so it travelled
+  along automatically.
+- `adjustColor` and `contrastText` stayed in `index.html` (used elsewhere there)
+  and the module keeps its own private copies. ~11 lines duplicated on purpose so
+  the module is self-contained and droppable into any page.
+- `getEnabledAnimations`, `setEnabledAnimations`, `rebuildAnimPicker` stayed in
+  `index.html` — they're admin UI, not animation logic.
+- `ANIMATION_META` moved into the module because both pages need it.
+
+`animations.css` was extracted the same way. Its rules depend on these custom
+properties, which the host page must define: `--accent-gold`, `--bg-card`,
+`--bg-deep`, `--bg-secondary`, `--text-muted`.
+
+### Verification
+
+`test_anim.js` loads `index.html` + `animations.js` in jsdom, stubs Firebase and
+canvas, then **invokes all eight animations and awaits each Promise.** Also runs a
+two-house config to confirm nothing assumes four. `test_faculty.js` does the same
+against `faculty.html`'s DOM.
+
+jsdom needs `pretendToBeVisual: true` or four of the animations fail on a missing
+`requestAnimationFrame`. That's a harness requirement, not a bug.
+
+**What jsdom cannot check:** actual visual rendering, canvas output, and CSS
+transition timing. Spin each animation once in a real browser after touching this
+module.
+
+---
+
+## Faculty queue model
+
+`faculty.html` flattens the queue into `fstate.steps`, each either:
+
+- `{kind:'pool', poolId}` — resolved at spin time by drawing at random from that
+  pool's remaining houses and removing it. The set is guaranteed; which person
+  gets which house is a genuine coin flip.
+- `{kind:'free', excluded:[idx]}` — random among the houses not excluded.
+
+Resolving at spin time rather than shuffling up front is deliberate: it keeps the
+randomness live, and `describeStep` can show what's left.
+
+Tested over 20,000 runs of admin's actual request (set of Callidus+Princeps, then
+an open spin excluding Vevaios): the pair appears 100% of the time, order splits
+50/50, the third spin never returns Vevaios. Edge cases covered: empty exclusion
+list, a set of all four houses, a set of one.
 
 ---
 
@@ -441,47 +542,47 @@ that referred to the file as `go.html`.
 
 ## Open items
 
-Ordered by value. Nothing here is required for the app to work.
+Ordered by value. Nothing here is required for anything to work.
 
-**1. Secondary input method — SPECIFICATION NEEDED, do not guess.**
-Jake raised this and it's the next thing to build, but "a secondary method of
-input" has at least four plausible readings and they lead to completely
-different designs:
+**1. Reconcile the duplicated animation CSS.**
+`animations.css` was extracted for `faculty.html`, but `index.html` still carries
+its own inline copy of those ~46 rule blocks. Left that way on purpose: touching
+`index.html`'s stylesheet days before registration risked a visual regression
+nobody would notice until go-live. After registration, delete those blocks from
+`index.html` and add `<link rel="stylesheet" href="animations.css">`. Verify by
+spinning each animation in a real browser, not in jsdom.
 
-- a bulk paste / queue of names to work through one at a time
-- scanning a student ID card or barcode
-- picking from a pre-loaded roster instead of typing
-- a second physical station type, e.g. a student-facing kiosk
-
-Ask which before writing anything. Note that a pre-loaded roster would mean
-putting student names into the sheet ahead of time, which changes the data
-handling story.
-
-**2. Add a graduation-year / `Class Of` column to the Roster.**
-Now lower priority than it first appeared, because the baseline-column approach
-means the annual rollover is four numbers rather than a row hunt. Still useful:
-the only way to identify a cohort in the Roster today is by Timestamp. Requires
-extending the append range `Roster!A:E` → `A:F` and sourcing the year (a Config
-key set once a year is simplest).
-
-**3. In-app undo / last-sort correction.**
+**2. In-app undo / last-sort correction.**
 Typos currently require opening the spreadsheet. A "fix last entry" button that
-rewrites the most recent row appended by the current user would cover the
-common case.
+rewrites the most recent row appended by the current user would cover the common
+case. Note the Roster is a hybrid (see SECOND INVARIANT) — an undo must only ever
+touch static appended rows, never the formula mirror block.
 
-**4. Duplicate-name warning at sort time.**
+**3. Duplicate-name warning at sort time.**
 With several stations running, the same student getting sorted twice is the
-likeliest data error. A soft warning ("a student with this name was already
-sorted into X — continue?") would catch it live. README §7 has a
-conditional-formatting workaround that requires no code.
+likeliest data error. A soft warning would catch it live. README §7 has a
+conditional-formatting workaround needing no code.
+
+**4. Add a graduation-year / `Class Of` column to the Roster.**
+Low priority now — the master-list link means the annual rollover is already
+mostly automatic. Still, the only way to identify which appended rows belong to
+which year is the Timestamp column. Would mean extending `Roster!A:E` to `A:F`.
 
 **5. Config key lookups instead of fixed row offsets.**
-Removes the "never insert a row above 9" landmine. Needs care and a live-sheet
-migration, so not something to do days before an event.
+Removes the "never insert a row above 9" landmine. Needs a live-sheet migration,
+so not something to do near an event.
 
 **6. Session countdown in the header.**
 The pre-flight check catches expiry, but showing "session ends 2:47" would let
-operators refresh at a natural gap instead of mid-line.
+operators refresh at a natural gap rather than mid-line.
+
+### Resolved, recorded so it isn't rebuilt
+
+- **"A secondary method of input"** meant Even Target mode. Shipped in 1.6.0. The
+  original phrasing was ambiguous enough to send someone building a bulk-paste
+  queue or a barcode scanner; it was neither.
+- **Quota/target sorting** — shipped in 1.6.0 as a toggle.
+- **Faculty spins** — shipped in 1.7.0 as `faculty.html`.
 
 ---
 
