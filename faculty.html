@@ -94,6 +94,15 @@
       </div>
     </div>
 
+    <!-- Queue Summary — only shown when a defined queue finishes -->
+    <div class="ceremony-result" id="summaryState">
+      <div class="result-welcome" id="summaryTitle">Welcome to your houses</div>
+      <div class="summary-list" id="summaryList"></div>
+      <div class="result-actions">
+        <button class="btn btn-gold" onclick="closeSummary()">Done</button>
+      </div>
+    </div>
+
   </div>
 
   <!-- Animation Style Picker -->
@@ -198,12 +207,30 @@
 .results-table { width: 100%; font-size: 13px; border-collapse: collapse; }
 .results-table td { padding: 7px 4px; border-bottom: 1px solid rgba(201,168,76,0.12); }
 .results-table td:last-child { text-align: right; font-weight: 600; }
+
+/* Queue summary — the celebratory "look who's in which house" moment */
+.summary-list { display: flex; flex-direction: column; gap: 10px; margin: 4px 0 8px; min-width: min(440px, 86vw); }
+.summary-row {
+  display: flex; align-items: center; gap: 14px;
+  padding: 12px 16px; border-radius: 12px;
+  background: var(--bg-card); border: 1.5px solid;
+  animation: result-reveal 0.5s ease backwards;
+}
+.summary-badge {
+  width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Cinzel', serif; font-size: 20px; font-weight: 700;
+  overflow: hidden;
+}
+.summary-badge img { width: 100%; height: 100%; object-fit: contain; }
+.summary-person { flex: 1; text-align: left; font-size: 18px; color: var(--text-primary); }
+.summary-house { font-family: 'Cinzel', serif; font-size: 19px; font-weight: 700; letter-spacing: 0.03em; }
 </style>
 
 <script>
 // ============================================================
 //  SORTING WHEEL — FACULTY CEREMONY
-//  faculty.html v2.0.0
+//  faculty.html v2.1.0
 // ============================================================
 //  A separate page for spinning new staff into houses.
 //
@@ -436,6 +463,7 @@ function setCeremonyPhase(phase) {
     $('animationStage').innerHTML = '';
   }
   if (phase !== 'result') hide('resultState');
+  if (phase !== 'summary') hide('summaryState');
   $('colorWash').classList.remove('active');
   $('animPicker').style.display = (phase === 'ready' || phase === 'input') ? 'flex' : 'none';
   $('facultyDrawer').style.display = (phase === 'ready') ? 'block' : 'none';
@@ -561,11 +589,96 @@ function showResult(house, personName) {
 function acceptSpin() {
   if (!state.pending) return;
   const { name, houseIdx, step } = state.pending;
-  state.results.push({ name, house: state.houses[houseIdx].name });
+  const h = state.houses[houseIdx];
+  state.results.push({
+    name, house: h.name, color: h.color, logoUrl: h.logoUrl,
+    queued: !!step          // distinguishes a queued spin from an ad-hoc one
+  });
   if (step) state.cursor++;
   state.pending = null;
   renderQueue();
+
+  // A defined queue just ran out -> celebrate the whole group together.
+  // Ad-hoc even-chance spins never trigger this; there is no "run" to close.
+  if (step && state.steps.length > 0 && state.cursor >= state.steps.length) {
+    showSummary();
+    return;
+  }
   setCeremonyPhase('ready');
+}
+
+// Show everyone from the run that just finished. Walks backwards through the
+// results taking the trailing block of queued spins, so if the operator did a
+// couple of ad-hoc spins before starting the queue those aren't swept in.
+function showSummary() {
+  const run = [];
+  for (let i = state.results.length - 1; i >= 0; i--) {
+    if (!state.results[i].queued) break;
+    run.unshift(state.results[i]);
+  }
+  if (!run.length) { setCeremonyPhase('ready'); return; }
+
+  $('summaryTitle').textContent = run.length === 1
+    ? 'Welcome to your house'
+    : 'Welcome to your houses';
+
+  const list = $('summaryList');
+  list.innerHTML = '';
+  run.forEach((r, i) => {
+    const row = document.createElement('div');
+    row.className = 'summary-row';
+    row.style.borderColor = r.color;
+    row.style.background = `linear-gradient(90deg, ${r.color}22, var(--bg-card))`;
+    row.style.animationDelay = (i * 0.12) + 's';
+
+    const badge = document.createElement('div');
+    badge.className = 'summary-badge';
+    if (r.logoUrl) {
+      const img = document.createElement('img');
+      img.src = r.logoUrl; img.alt = '';
+      badge.appendChild(img);
+    } else {
+      badge.style.background = r.color;
+      badge.style.color = contrastText(r.color);
+      badge.textContent = r.house.charAt(0);
+    }
+
+    const who = document.createElement('div');
+    who.className = 'summary-person';
+    who.textContent = r.name;
+
+    const hs = document.createElement('div');
+    hs.className = 'summary-house';
+    const hex = r.color.replace('#','');
+    const lum = parseInt(hex.slice(0,2),16)*0.299 + parseInt(hex.slice(2,4),16)*0.587 + parseInt(hex.slice(4,6),16)*0.114;
+    hs.style.color = lum < 80 ? '#e0e0e0' : (lum > 200 ? '#d0d0d0' : r.color);
+    hs.textContent = r.house;
+
+    row.appendChild(badge); row.appendChild(who); row.appendChild(hs);
+    list.appendChild(row);
+  });
+
+  setCeremonyPhase('summary');
+  show('summaryState');
+  fireGroupConfetti(run.map(r => r.color));
+}
+
+function closeSummary() {
+  setCeremonyPhase('ready');
+}
+
+// Bigger finish than a single reveal: two bursts from the lower corners in
+// every house colour that came up.
+function fireGroupConfetti(colors) {
+  const palette = [...new Set(colors)].concat('#c9a84c', '#ffffff');
+  const end = Date.now() + 2600;
+  (function frame() {
+    confetti({ particleCount: 4, angle: 60, spread: 70, startVelocity: 45,
+               origin: { x: 0, y: 0.85 }, colors: palette });
+    confetti({ particleCount: 4, angle: 120, spread: 70, startVelocity: 45,
+               origin: { x: 1, y: 0.85 }, colors: palette });
+    if (Date.now() < end) requestAnimationFrame(frame);
+  })();
 }
 
 function cancelSort() {
@@ -722,6 +835,7 @@ document.addEventListener('keydown', e => {
   if ($('queueModal').style.display === 'block') return;
   if (state.ceremonyPhase === 'input') startSort();
   else if (state.ceremonyPhase === 'result') acceptSpin();
+  else if (state.ceremonyPhase === 'summary') closeSummary();
   else if (state.ceremonyPhase === 'ready') showInputs();
 });
 
