@@ -1,6 +1,6 @@
 // ============================================================
 //  SORTING WHEEL — SHARED CEREMONY ANIMATIONS
-//  animations.js  v1.1.0
+//  animations.js  v1.2.0
 // ============================================================
 //  Extracted from index.html so that index.html (student sorting)
 //  and faculty.html (predetermined faculty spins) can share one
@@ -37,7 +37,7 @@
 
 // Published so the host page can display which build is actually loaded.
 // Keep in step with the version in the header comment above.
-window.SW_ANIMATIONS_VERSION = '1.1.0';
+window.SW_ANIMATIONS_VERSION = '1.2.0';
 
 window.createSortingWheelAnimations = function (deps) {
   const $ = deps.$;
@@ -378,48 +378,104 @@ window.createSortingWheelAnimations = function (deps) {
   // ============================================================
   //  ANIMATION: Card Shuffle
   // ============================================================
+  // Three-card-monte order of operations: you see the cards, THEN they go
+  // face down, THEN they move. Previously they started face down, so there was
+  // nothing to follow — you only learned what you were looking at once it was
+  // over, which drained the tension out of the shuffle.
   function animateCards(targetIdx) {
     return new Promise(resolve => {
       const stage = $('animationStage');
       stage.classList.add('visible');
       stage.innerHTML = '<div class="shuffle-arena" id="shuffleArena"></div>';
       const arena = $('shuffleArena');
-      const n = getHouses().length;
+      const houses = getHouses();
+      const n = houses.length;
       const cardW = 120, cardH = 170;
       const totalW = arena.offsetWidth || 500;
-      const spacing = Math.min(140, (totalW - cardW) / (n - 1));
+      const spacing = Math.min(140, (totalW - cardW) / Math.max(n - 1, 1));
       const startX = (totalW - spacing * (n - 1) - cardW) / 2;
 
-      // Create face-down cards in a row
-      const cards = getHouses().map((h, i) => {
+      // Laid out alphabetically so the starting arrangement is predictable and
+      // readable. houseIdx keeps each card bound to its real house.
+      const order = houses
+        .map((h, i) => ({ h, i }))
+        .sort((a, b) => a.h.name.localeCompare(b.h.name));
+
+      const cards = order.map((entry, pos) => {
         const card = document.createElement('div');
-        card.className = 'shuffle-card shuffle-card-back';
-        card.style.left = (startX + i * spacing) + 'px';
+        card.className = 'shuffle-card shuffle-card-front';
+        card.style.left = (startX + pos * spacing) + 'px';
         card.style.top = '65px';
+        card.style.background = entry.h.color;
+        card.style.color = contrastText(entry.h.color);
+        card.style.opacity = '0';
+        card.style.transform = 'translateY(16px)';
+        card.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+        card.innerHTML = '<span class="shield-initial">' + entry.h.name.charAt(0) +
+                         '</span><span class="shield-name">' + entry.h.name + '</span>';
         arena.appendChild(card);
-        return { el: card, houseIdx: i };
+        return { el: card, houseIdx: entry.i };
       });
 
-      // Shuffling phase: rapid position swaps
-      let shuffleCount = 0;
-      const maxShuffles = 12 + n * 3;
-      const shuffleInterval = setInterval(() => {
-        const a = Math.floor(Math.random() * n);
-        let b = Math.floor(Math.random() * n);
-        if (b === a) b = (b + 1) % n;
-        const tmpLeft = cards[a].el.style.left;
-        cards[a].el.style.left = cards[b].el.style.left;
-        cards[b].el.style.left = tmpLeft;
-        [cards[a], cards[b]] = [cards[b], cards[a]];
-        shuffleCount++;
-        if (shuffleCount >= maxShuffles) {
-          clearInterval(shuffleInterval);
-          separateCards();
-        }
-      }, 250);
+      const DEAL_STAGGER = 90, DEAL_MOVE = 320, HOLD = 1100;
+      const FLIP_STAGGER = 70, FLIP_HALF = 190;
+
+      // 1. Deal face up, left to right.
+      cards.forEach((c, i) => setTimeout(() => {
+        c.el.style.opacity = '1';
+        c.el.style.transform = 'translateY(0)';
+      }, DEAL_STAGGER * i));
+
+      const dealDone = DEAL_STAGGER * (n - 1) + DEAL_MOVE;
+
+      // 2. Hold so they can actually be read, then 3. turn them face down.
+      setTimeout(() => {
+        cards.forEach((c, i) => setTimeout(() => flipDown(c), FLIP_STAGGER * i));
+      }, dealDone + HOLD);
+
+      const flipDone = dealDone + HOLD + FLIP_STAGGER * (n - 1) + FLIP_HALF * 2 + 120;
+
+      // Squash to zero width, swap the face, expand again — reads as a flip
+      // without needing a 3D card structure.
+      function flipDown(c) {
+        c.el.style.transition = 'transform ' + (FLIP_HALF / 1000) + 's ease-in';
+        c.el.style.transform = 'scaleX(0)';
+        setTimeout(() => {
+          c.el.className = 'shuffle-card shuffle-card-back';
+          c.el.style.background = '';
+          c.el.style.color = '';
+          c.el.innerHTML = '';
+          c.el.style.transition = 'transform ' + (FLIP_HALF / 1000) + 's ease-out';
+          c.el.style.transform = 'scaleX(1)';
+        }, FLIP_HALF);
+      }
+
+      // 4. Only now do they move.
+      setTimeout(startShuffle, flipDone);
+
+      function startShuffle() {
+        // Hand control of transitions back to the stylesheet so `left` eases.
+        cards.forEach(c => { c.el.style.transition = ''; c.el.style.transform = ''; });
+
+        let shuffleCount = 0;
+        const maxShuffles = 8 + n * 2;   // trimmed to pay for the new opening
+        const shuffleInterval = setInterval(() => {
+          const a = Math.floor(Math.random() * n);
+          let b = Math.floor(Math.random() * n);
+          if (b === a) b = (b + 1) % n;
+          const tmpLeft = cards[a].el.style.left;
+          cards[a].el.style.left = cards[b].el.style.left;
+          cards[b].el.style.left = tmpLeft;
+          const t = cards[a]; cards[a] = cards[b]; cards[b] = t;
+          shuffleCount++;
+          if (shuffleCount >= maxShuffles) {
+            clearInterval(shuffleInterval);
+            separateCards();
+          }
+        }, 200);
+      }
 
       function separateCards() {
-        // Move winner card to top center
         const winIdx = cards.findIndex(c => c.houseIdx === targetIdx);
         cards[winIdx].el.style.transition = 'all 0.6s cubic-bezier(0.4, 0, 0.2, 1)';
         cards[winIdx].el.style.left = ((totalW - cardW) / 2) + 'px';
@@ -428,7 +484,6 @@ window.createSortingWheelAnimations = function (deps) {
         cards[winIdx].el.style.boxShadow = '0 8px 32px rgba(201,168,76,0.4)';
         cards[winIdx].el.style.borderColor = 'var(--accent-gold)';
 
-        // Move losers to bottom row
         const loserCards = cards.filter((c, i) => i !== winIdx);
         const loserSpacing = Math.min(140, (totalW - cardW) / Math.max(loserCards.length - 1, 1));
         const loserStartX = (totalW - loserSpacing * (loserCards.length - 1) - cardW) / 2;
@@ -442,11 +497,10 @@ window.createSortingWheelAnimations = function (deps) {
       }
 
       function revealCards(winIdx, loserCards) {
-        // Shuffle loser reveal order
         const revealOrder = [...loserCards];
         for (let i = revealOrder.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
-          [revealOrder[i], revealOrder[j]] = [revealOrder[j], revealOrder[i]];
+          const t = revealOrder[i]; revealOrder[i] = revealOrder[j]; revealOrder[j] = t;
         }
 
         let delay = 400;
@@ -456,20 +510,24 @@ window.createSortingWheelAnimations = function (deps) {
             c.el.className = 'shuffle-card shuffle-card-front';
             c.el.style.background = h.color;
             c.el.style.color = contrastText(h.color);
-            c.el.innerHTML = `<span class="shield-initial">${h.name.charAt(0)}</span><span class="shield-name">${h.name}</span>`;
+            // Inline transform would beat .shuffle-eliminated's transform.
+            c.el.style.transform = '';
+            c.el.innerHTML = '<span class="shield-initial">' + h.name.charAt(0) +
+                             '</span><span class="shield-name">' + h.name + '</span>';
             setTimeout(() => c.el.classList.add('shuffle-eliminated'), 400);
           }, delay);
           delay += 900;
         });
 
-        // Reveal winner last
         setTimeout(() => {
           const h = getHouses()[targetIdx];
           cards[winIdx].el.className = 'shuffle-card shuffle-card-front';
           cards[winIdx].el.style.background = h.color;
           cards[winIdx].el.style.color = contrastText(h.color);
           cards[winIdx].el.style.zIndex = '10';
-          cards[winIdx].el.innerHTML = `<span class="shield-initial">${h.name.charAt(0)}</span><span class="shield-name">${h.name}</span>`;
+          cards[winIdx].el.style.transform = '';
+          cards[winIdx].el.innerHTML = '<span class="shield-initial">' + h.name.charAt(0) +
+                                       '</span><span class="shield-name">' + h.name + '</span>';
           setTimeout(() => {
             cards[winIdx].el.classList.add('shuffle-winner');
             setTimeout(resolve, 800);
