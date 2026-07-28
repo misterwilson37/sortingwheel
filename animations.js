@@ -1,6 +1,6 @@
 // ============================================================
 //  SORTING WHEEL — SHARED CEREMONY ANIMATIONS
-//  animations.js  v1.0.0
+//  animations.js  v1.1.0
 // ============================================================
 //  Extracted from index.html so that index.html (student sorting)
 //  and faculty.html (predetermined faculty spins) can share one
@@ -34,6 +34,10 @@
 //
 //  Required CSS: animations.css (or the equivalent rules inline).
 // ============================================================
+
+// Published so the host page can display which build is actually loaded.
+// Keep in step with the version in the header comment above.
+window.SW_ANIMATIONS_VERSION = '1.1.0';
 
 window.createSortingWheelAnimations = function (deps) {
   const $ = deps.$;
