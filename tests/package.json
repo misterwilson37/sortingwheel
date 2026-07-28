@@ -1,0 +1,12 @@
+{
+  "name": "sorting-wheel-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "jsdom test suites for the Sorting Wheel. Not deployed.",
+  "scripts": {
+    "test": "./run_tests.sh"
+  },
+  "dependencies": {
+    "jsdom": "^24.0.0"
+  }
+}
