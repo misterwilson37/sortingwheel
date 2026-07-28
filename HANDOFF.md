@@ -3,8 +3,8 @@
 Technical notes for whoever picks this up next, human or Claude.
 Operational instructions live in `README.md`; this file is the code map.
 
-**Handoff version:** 1.10.0
-**App version at handoff:** `index.html` 1.8.0, `faculty.html` 2.3.0, `animations.js` 1.0.0, `sorting-wheel.css` 1.0.0, `ellis.html` 1.1.0
+**Handoff version:** 1.11.0
+**App version at handoff:** `index.html` 1.9.0, `faculty.html` 2.4.0, `animations.js` 1.1.0, `sorting-wheel.css` 1.1.0, `ellis.html` 1.2.0
 **Session:** Rounds 1-2 of documented work. Claude instance name: **Trilby**
 — a hat that reads code instead of minds, for an app that sorts students into
 houses. Predecessors on other Jake projects: Fable, Stedman. Do not reuse.
@@ -307,6 +307,27 @@ visible sign that the wheel is being steered. A small triangle reads as
 decoration. Keep any future queue indicator equally opaque — no numerals, no
 progress bars, no wording.
 
+## Version reporting
+
+With a no-build, hand-uploaded deploy, the likeliest deployment mistake is
+updating one file and forgetting another it depends on. So each shared file
+publishes its own version and the page reports **what actually loaded**:
+
+- `animations.js` sets `window.SW_ANIMATIONS_VERSION`
+- `sorting-wheel.css` sets `--sw-css-version` on `:root`, read back with
+  `getComputedStyle(document.documentElement).getPropertyValue(...)`
+- both pages render a `.build-stamp` bottom-left and show `MISSING` in red if
+  either is absent
+
+**When you bump either shared file, bump it in two places** — the header comment
+and the published constant. They are deliberately separate so a mismatch is
+visible rather than assumed.
+
+Page titles carry versions too, and `index.html` / `faculty.html` both re-apply
+the version when they rewrite `document.title` with the school name. An earlier
+version of `index.html` overwrote the title on entering the ceremony and lost the
+version from the tab.
+
 ## Holding the queue
 
 `state.queuePaused` is a **sticky** toggle bound to the glyph itself
@@ -325,6 +346,16 @@ Resuming an exhausted queue is what closes the run — `toggleQueuePause` checks
 
 **No toast on toggle.** A visible "queue held" message in front of the room
 defeats the entire design. The glyph changing shape is the only feedback.
+
+**Never close out a run while `state.pending` is set.** Found in live use, not by
+testing: resuming while a spin's result was still on screen called
+`showSummary()` immediately, which discarded `state.pending`. That person was
+never recorded, never appeared in the celebration, and the operator never got to
+press Confirm — silent data loss in front of an audience. `toggleQueuePause` now
+requires `!state.pending` before closing out; `acceptSpin` closes the run a
+moment later instead, and the person is included. Regression test:
+`tests/test_pending.js`, which walks the exact live sequence
+A / hold / D / resume / B / hold / E / resume / C / hold / F / resume.
 
 Run lifecycle: `runActive()` = queue non-empty. `runExhausted()` = cursor past
 the end. `closeRun()` clears the queue so later spins belong to no run.
