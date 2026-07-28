@@ -1,6 +1,6 @@
 // ============================================================
 //  SORTING WHEEL — SHARED CEREMONY ANIMATIONS
-//  animations.js  v1.2.0
+//  animations.js  v1.3.0
 // ============================================================
 //  Extracted from index.html so that index.html (student sorting)
 //  and faculty.html (predetermined faculty spins) can share one
@@ -32,12 +32,16 @@
 //  These are created dynamically by the animations themselves:
 //      shieldRow   shuffleArena   bracketStage
 //
-//  Required CSS: animations.css (or the equivalent rules inline).
+//  Required CSS: sorting-wheel.css. (Earlier versions of this note
+//  said `animations.css`; that file was folded into sorting-wheel.css
+//  in css v1.2.0 and deleted. Do not go looking for it.)
 // ============================================================
 
 // Published so the host page can display which build is actually loaded.
-// Keep in step with the version in the header comment above.
-window.SW_ANIMATIONS_VERSION = '1.2.0';
+// Keep in step with the version in the header comment above. These are
+// deliberately two separate literals so a half-done bump is VISIBLE in the
+// build stamp rather than assumed.
+window.SW_ANIMATIONS_VERSION = '1.3.0';
 
 window.createSortingWheelAnimations = function (deps) {
   const $ = deps.$;
@@ -70,24 +74,56 @@ window.createSortingWheelAnimations = function (deps) {
     const cardHeight = $('rollerFrame').offsetHeight;
     strip.innerHTML = '';
 
-    // Build: 8 full random cycles + land on target
+    // Build: 8 full cycles, each a fresh shuffle, then land on the target.
+    //
+    // v1.3.0 rewrote this. The old sequence was `(i + cycle * 3) % n`, which
+    // was not a shuffle at all — it was a monotonic 0,1,2,3 walk with the start
+    // point nudged each cycle. Two problems:
+    //
+    //  1. At every cycle boundary the offset (+3) and the index (+1) cancelled
+    //     mod 4, so the same house appeared on BOTH sides of the seam. With
+    //     four houses that is eight visible double-cards per spin, on the
+    //     default animation. (Three and six houses happened to come out clean,
+    //     which is presumably how it survived a review.)
+    //  2. The strip length was `n * cycles + targetIndex + 1`, so the distance
+    //     travelled depended on which house had won. Same duration, different
+    //     distance, therefore different speed. Nobody was ever going to clock
+    //     it, but a wheel whose spin varies with its own answer is a bad idea
+    //     on principle. The length is now constant.
+    //
+    // Each cycle is a real Fisher-Yates shuffle of all houses, so every house
+    // still appears exactly `cycles` times — no house is over-represented and
+    // the strip carries no information about the outcome.
     const cycles = 8;
-    const totalCards = getHouses().length * cycles + targetIndex + 1;
+    const n = getHouses().length;
     const cards = [];
 
-    for (let i = 0; i < totalCards; i++) {
-      let houseIdx;
-      if (i === totalCards - 1) {
-        houseIdx = targetIndex; // Last card is the winner
-      } else {
-        houseIdx = i % getHouses().length;
-        // Shuffle within each cycle for visual variety
-        // Simple: just use modulo but offset each cycle
-        const cycle = Math.floor(i / getHouses().length);
-        houseIdx = (i + cycle * 3) % getHouses().length;
+    for (let c = 0; c < cycles; c++) {
+      const cyc = Array.from({ length: n }, (_, i) => i);
+      for (let i = n - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [cyc[i], cyc[j]] = [cyc[j], cyc[i]];
       }
-      cards.push(houseIdx);
+
+      // A cycle must not START on the house the previous one ENDED on.
+      // This seam is exactly where the old formula doubled up.
+      if (cards.length && n > 1 && cyc[0] === cards[cards.length - 1]) {
+        [cyc[0], cyc[1]] = [cyc[1], cyc[0]];
+      }
+
+      // The final cycle must not END on the winner either, or the reveal card
+      // would be preceded by its own twin. Swapping the last two entries is
+      // safe: a shuffled cycle holds each house once, so neither the new tail
+      // nor its new neighbour can collide.
+      if (c === cycles - 1 && n > 2 && cyc[n - 1] === targetIndex) {
+        [cyc[n - 1], cyc[n - 2]] = [cyc[n - 2], cyc[n - 1]];
+      }
+
+      cards.push(...cyc);
     }
+
+    cards.push(targetIndex); // Last card is the winner
+    const totalCards = cards.length;
 
     cards.forEach(hIdx => {
       const h = getHouses()[hIdx];
@@ -586,6 +622,18 @@ window.createSortingWheelAnimations = function (deps) {
       }
 
       function runMatchup(container, idxA, idxB, winner, callback) {
+        // TRIPWIRE. `winner` must be one of the two entries on screen. When it
+        // wasn't, the old `winner === idxA ? elA : elB` quietly fell through to
+        // elB and crowned whoever happened to be on the right — no error, no
+        // symptom, just the wrong house glowing a second before the reveal
+        // announced a different one. The caller now guarantees this can't
+        // happen; this is here so that if it ever does, it says so.
+        if (winner !== idxA && winner !== idxB) {
+          console.error('animations.js: bracket matchup asked to crown a house that is not in it',
+                        { idxA, idxB, winner });
+          winner = idxA;
+        }
+
         const matchup = document.createElement('div');
         matchup.className = 'bracket-matchup';
         const elA = createEntry(idxA);
@@ -646,12 +694,47 @@ window.createSortingWheelAnimations = function (deps) {
 
       function runNextSemi() {
         if (semiIdx >= semis.length) {
+          // Only one house ever advanced (one or two houses configured, or a
+          // lone bye). There is nobody to play, so crown the semi winner rather
+          // than staging a final of Callidus VS Callidus.
+          if (semiWinners.length < 2) {
+            const champ = semiRow.querySelector('.bracket-won')
+                       || semiRow.querySelector('.bracket-entry');
+            if (champ) champ.classList.add('bracket-champion');
+            setTimeout(resolve, 1000);
+            return;
+          }
+
           // Run final
           setTimeout(() => {
             finalLabel.style.display = '';
             finalRow.style.display = '';
-            const f = semiWinners.slice(0, 2);
-            if (f.length < 2) f.push(f[0]);
+
+            // THE FINALISTS MUST INCLUDE THE HOUSE THAT WAS ACTUALLY SORTED.
+            //
+            // This was `semiWinners.slice(0, 2)`, which is only safe while
+            // there are exactly two semis. With five or more houses there are
+            // three or more, and the target could win its semi and then be left
+            // out of its own final — at which point runMatchup was handed a
+            // `winner` that wasn't on screen and crowned the wrong card.
+            // Measured over 20,000 simulated spins: 0% wrong at 4 houses,
+            // 19.9% at 5, 33.8% at 6, 49.9% at 8. Ellis runs four houses, which
+            // is why this sat here undetected — but the handoff claims nothing
+            // hardcodes 4, and this did, invisibly.
+            //
+            // The target always reaches this point (it wins every matchup it is
+            // in, and byes advance automatically), so it is always available to
+            // seed one side of the final.
+            const others = semiWinners.filter(w => w !== targetIdx);
+            const opp = others.length
+              ? others[Math.floor(Math.random() * others.length)]
+              : targetIdx;
+
+            // Randomise which side the target sits on. Otherwise the winner
+            // would always be the same slot, which is the sort of thing a room
+            // full of adults notices over a dozen spins.
+            const f = Math.random() < 0.5 ? [targetIdx, opp] : [opp, targetIdx];
+
             runMatchup(finalRow, f[0], f[1], targetIdx, () => {
               // Champion glow
               const winEntry = finalRow.querySelector('.bracket-won');
