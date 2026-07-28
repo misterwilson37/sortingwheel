@@ -11,7 +11,7 @@ spreadsheet — not the browser — is the source of truth.
 **Short link for staff:** https://sortingwheel.misterwilson.org/ellis.html
 **The spreadsheet:** https://docs.google.com/spreadsheets/d/1rYZ71el1yPjo1X7F71nI8WQ9LvCqY4g7r-iXr5IYQqE/edit
 
-Current version: **1.8.0**
+Current version: **1.9.0**
 
 ---
 
@@ -19,15 +19,16 @@ Current version: **1.8.0**
 
 | File | Version | What it is |
 |---|---|---|
-| `index.html` | 1.8.0 | The entire app. HTML + CSS + JS in one file, no build step. |
-| `ellis.html` | 1.1.0 | Redirect page. Forwards to `index.html?sheet=<Ellis sheet ID>` so staff only have to remember one short URL. |
-| `faculty.html` | 2.0.0 | Separate ceremony for spinning **faculty** into houses. Visually identical to the student one. Never touches student counts or the Roster. See §10. |
-| `animations.js` | 1.0.0 | The eight ceremony animations, shared by `index.html` and `faculty.html`. |
-| `sorting-wheel.css` | 1.0.0 | The whole stylesheet, shared by both pages. One file so the two ceremonies cannot drift apart visually. |
+| `index.html` | 1.9.0 | The student sorting app. HTML + JS; CSS and animations are now external (see below). No build step. |
+| `ellis.html` | 1.2.0 | Redirect page. Forwards to `index.html?sheet=<Ellis sheet ID>` so staff only have to remember one short URL. |
+| `faculty.html` | 2.4.0 | Separate ceremony for spinning **faculty** into houses. Visually identical to the student one. Never touches student counts or the Roster. See §10. |
+| `animations.js` | 1.1.0 | The eight ceremony animations, shared by `index.html` and `faculty.html`. |
+| `sorting-wheel.css` | 1.1.0 | The whole stylesheet, shared by both pages. One file so the two ceremonies cannot drift apart visually. |
+| `tests/` | — | jsdom test suites and `run_tests.sh`. Not deployed; upload is optional. |
 | `config.js` | — | Firebase project keys (`categorizingcougar`). Safe to be public; Firebase web config is designed to be. |
 | `CNAME` | — | GitHub Pages custom domain: `sortingwheel.misterwilson.org` |
-| `README.md` | 1.7.0 | This file. |
-| `HANDOFF.md` | 1.7.0 | Technical notes for the next developer / Claude session. |
+| `README.md` | 1.12.0 | This file. |
+| `HANDOFF.md` | 1.11.0 | Technical notes for the next developer / Claude session. |
 
 Deployment is GitHub Pages. Upload the changed file through the GitHub web UI
 and it is live in about a minute. There is no build, no CLI, no bundler.
@@ -558,11 +559,73 @@ Exactly like the student version. Tap the logo, type a name, **SORT**, watch,
 then **✓ Next** or **✗ Re-sort**. Re-sort puts the house back into the set, so
 re-spinning someone doesn't quietly use up one of your reserved houses.
 
-Once the queue runs out, spins go back to even chance — so you can queue three
-and then keep going if a fourth person turns up.
+### Knowing where you are, without telling the room
 
-The session's results appear in the controls modal at the bottom. Screenshot it
-if you want a record.
+To the right of **Faculty Controls** at the bottom of the ready screen there's a
+small shape. It tells you who's up next:
+
+| Shape | Meaning |
+|---|---|
+| &infin; infinity | next spin is a plain even chance |
+| &bull; filled dot | person 1 of the run |
+| &#9474; vertical bar | person 2 |
+| &#9651; triangle | person 3 |
+| &#9633; square | person 4 |
+| pentagon, hexagon&hellip; | person 5, 6&hellip; |
+
+The number of sides is the position. A dot is a one-sided figure, a bar is a
+two-sided one, then it becomes real polygons. Past ten sides they all look like
+circles, so a centre dot appears — by then it just means "deep in a long run".
+
+It reads as decoration. "3 of 4" would get spotted in a second by a room of
+adults who are already suspicious; a small triangle does not. It's only on the
+ready screen, between people, which is when you need it.
+
+### The finish
+
+When a queued run reaches its last person, you get a **"Welcome to your houses"**
+screen listing everyone from that run with their house colour and logo, and a
+bigger confetti burst. It's the group moment at the end of the individual ones.
+
+It only appears when you'd actually defined a queue. Walk-up even-chance spins
+never trigger it, because there's no run to close — which means the summary
+doubles as your signal that the queue is finished and spins are back to even.
+
+Tap **Done** and you're back to the ready screen. Walk-up spins never appear in
+a run's summary, whether they happened before the run or in the middle of it.
+
+### Tap the shape to hold the queue
+
+**The glyph is a button.** Tap it and the queue is held: the shape becomes
+&infin;, spins go to even chance, and **your place in the queue is kept**. Tap it
+again to resume and the shape comes back exactly where you left it.
+
+That covers a surprise arrival mid-run. Say A, B and C are queued and D turns up
+after A has gone: tap the shape, sort D on an even spin, tap it again, and B and
+C carry on with their reserved houses intact. **D still appears in the final
+celebration**, as though they'd been planned all along.
+
+It also lets you add someone to the tally at the end. If C is the last queued
+person and you want D in the group photo, tap the shape *while C's result is
+still on screen*, then Confirm. The celebration is held back. Sort D, then tap
+the shape once more — that closes the run and celebrates A, B, C and D together.
+
+The hold is sticky, not one-shot, so you can take two walk-ups in a row without
+re-tapping. And tapping it produces no message on screen — the shape changing is
+the only confirmation, because "queue held" in front of the room would give the
+whole thing away.
+
+The same toggle is in the controls modal as **Hold the queue** / **Resume the
+queue** if you'd rather not hunt for a 16-pixel target.
+
+**Finish the run now** — also in the modal, ends a run early and celebrates
+whoever has already gone. For when only two of the three people turn up.
+
+Anyone sorted while a run is open joins that run's celebration. Anyone sorted
+when no run exists at all is just a spin, and produces no summary.
+
+The full session's results also live in the controls modal at the bottom.
+Screenshot either if you want a record.
 
 ### Notes
 
