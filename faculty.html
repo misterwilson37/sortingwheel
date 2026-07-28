@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sorting Wheel — Faculty v2.4.0</title>
+<title>Sorting Wheel — Faculty v2.6.1</title>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="sorting-wheel.css">
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -220,8 +220,22 @@
 .results-table td { padding: 7px 4px; border-bottom: 1px solid rgba(201,168,76,0.12); }
 .results-table td:last-child { text-align: right; font-weight: 600; }
 
-/* Queue summary — the celebratory "look who's in which house" moment */
-.summary-list { display: flex; flex-direction: column; gap: 10px; margin: 4px 0 8px; min-width: min(440px, 86vw); }
+/* Queue summary — the celebratory "look who's in which house" moment.
+   Scales with headcount: one column normally, two past 7 people, and a
+   compact row past 14 so a big group still fits on one screen. */
+.summary-list {
+  display: grid; grid-template-columns: 1fr; gap: 10px;
+  margin: 4px 0 8px; width: min(460px, 88vw);
+  max-height: 62vh; overflow-y: auto;
+}
+.summary-list.two-col { grid-template-columns: 1fr 1fr; width: min(880px, 94vw); gap: 8px; }
+.summary-list.compact .summary-row { padding: 7px 12px; gap: 10px; }
+.summary-list.compact .summary-badge { width: 30px; height: 30px; font-size: 14px; }
+.summary-list.compact .summary-person { font-size: 14px; }
+.summary-list.compact .summary-house { font-size: 14px; }
+@media (max-width: 720px) {
+  .summary-list.two-col { grid-template-columns: 1fr; width: min(460px, 88vw); }
+}
 .summary-row {
   display: flex; align-items: center; gap: 14px;
   padding: 12px 16px; border-radius: 12px;
@@ -244,9 +258,9 @@
    and so on. The infinity sign means the next spin is a plain even chance.
    Reads as decoration to anyone who isn't looking for it, which is the point:
    a room of cynical adults will pounce on anything that says "3 of 4". */
-.queue-glyph { display: inline-flex; align-items: center; width: 16px; height: 16px; opacity: 0.55; cursor: pointer; padding: 4px; margin: -4px; }
-.queue-glyph svg { width: 16px; height: 16px; display: block; }
-.admin-drawer-tab:hover .queue-glyph { opacity: 0.8; }
+.queue-glyph { display: inline-flex; align-items: center; width: 21px; height: 21px; opacity: 0.75; cursor: pointer; padding: 6px; margin: -6px; }
+.queue-glyph svg { width: 21px; height: 21px; display: block; }
+.admin-drawer-tab:hover .queue-glyph { opacity: 1; }
 .queue-glyph.bump svg { animation: glyph-bump 0.45s ease; }
 @keyframes glyph-bump {
   0% { transform: scale(1); }
@@ -258,7 +272,7 @@
 <script>
 // ============================================================
 //  SORTING WHEEL — FACULTY CEREMONY
-//  faculty.html v2.4.0
+//  faculty.html v2.6.1
 // ============================================================
 //  A separate page for spinning new staff into houses.
 //
@@ -284,7 +298,7 @@
 //  queue modal only.
 // ============================================================
 
-const FACULTY_VERSION = '2.4.0';
+const FACULTY_VERSION = '2.6.1';
 const $ = id => document.getElementById(id);
 const show = (el) => { if (typeof el === 'string') el = $(el); el.classList.add('active','visible'); };
 const hide = (el) => { if (typeof el === 'string') el = $(el); el.classList.remove('active','visible'); };
@@ -308,7 +322,9 @@ const state = {
   cursor: 0,
   pending: null,    // {step, houseIdx, name} awaiting Confirm / Re-sort
   queuePaused: false, // hold the queue: spins go even-chance, position preserved
-  runId: 0,         // increments each time a queue is started; tags results
+  groupId: 0,       // every result belongs to a group; a celebration closes one
+  // null = decide automatically; false = "not yet"; true = "end on next Confirm"
+  endOverride: null,
   results: [],
   spinning: false
 };
@@ -592,6 +608,7 @@ async function startSort() {
     state.spinning = false;
     $('sortBtn').disabled = false;
   }
+  renderQueue();       // the pending spin changes what Confirm will do
   showResult(house, name);
 }
 
@@ -627,6 +644,24 @@ function showResult(house, personName) {
 function runActive() { return state.steps.length > 0; }
 function runExhausted() { return runActive() && state.cursor >= state.steps.length; }
 
+// How many queue slots will have been used once the spin on screen is confirmed.
+function effectiveCursor() {
+  return state.cursor + (state.pending && state.pending.step ? 1 : 0);
+}
+
+// THE glyph question: will the next Confirm end the group and celebrate?
+//
+// The glyph is a readout of what Confirm is about to do, not a button that does
+// it. Confirm always drives the ceremony forward; the glyph just says where
+// forward goes. That is why the cross shows up on the LAST queued person rather
+// than lingering afterwards.
+function endsOnNextConfirm() {
+  if (state.endOverride !== null) return state.endOverride;
+  if (!runActive()) return false;          // no queue: nothing ends by itself
+  if (state.queuePaused) return false;     // held: you're adding people
+  return effectiveCursor() >= state.steps.length;
+}
+
 // Closing a run clears the queue, so anyone sorted afterwards belongs to no run
 // and can't be swept into a later summary.
 function closeRun() {
@@ -634,27 +669,29 @@ function closeRun() {
   state.pools = {};
   state.cursor = 0;
   state.queuePaused = false;
+  state.endOverride = null;
   poolCounter = 0;
 }
 
 function acceptSpin() {
   if (!state.pending) return;
+  // Decide BEFORE mutating: endsOnNextConfirm() reads state.pending.
+  const shouldEnd = endsOnNextConfirm();
   const { name, houseIdx, step } = state.pending;
   const h = state.houses[houseIdx];
 
-  // Anyone sorted while a run is open belongs to that run — including walk-ups
-  // spun with the queue held. They joined the group, so they join the
-  // celebration. Only spins with no run open at all are untagged.
+  // EVERYONE belongs to the current group, queue or no queue. A celebration is
+  // what closes a group, so you can gather up a stretch of plain walk-ups and
+  // celebrate them together exactly the same way.
   state.results.push({
     name, house: h.name, color: h.color, logoUrl: h.logoUrl,
     queued: !!step,
-    runId: runActive() ? state.runId : null
+    groupId: state.groupId
   });
   if (step) state.cursor++;
   state.pending = null;
 
-  // Close out only when the queue is spent AND not being held open.
-  if (runExhausted() && !state.queuePaused) {
+  if (shouldEnd) {
     closeRun();
     renderQueue();
     showSummary();
@@ -664,15 +701,14 @@ function acceptSpin() {
   setCeremonyPhase('ready');
 }
 
-// Show everyone from the run that just finished.
+// Celebrate everyone in the current group.
 //
-// Results are tagged with the runId they belong to rather than being inferred
-// from a trailing block. An earlier version walked backwards until it hit a
-// non-queued result, which broke the moment an off-queue walk-up happened
-// mid-run: everyone before the interruption silently vanished from the summary.
-// That is exactly the situation off-queue exists to handle, so it has to work.
+// Membership is a simple groupId tag, not a positional scan. An early version
+// walked backwards through results until it hit a non-queued entry, which broke
+// the moment a walk-up happened mid-run: everyone before the interruption
+// vanished from the summary. Tagging also means a group needs no queue at all.
 function showSummary() {
-  const run = state.results.filter(r => r.runId === state.runId);
+  const run = state.results.filter(r => r.groupId === state.groupId);
   if (!run.length) { setCeremonyPhase('ready'); return; }
 
   $('summaryTitle').textContent = run.length === 1
@@ -681,12 +717,15 @@ function showSummary() {
 
   const list = $('summaryList');
   list.innerHTML = '';
+  // Lay out for the headcount rather than assuming a small group.
+  list.classList.toggle('two-col', run.length > 7);
+  list.classList.toggle('compact', run.length > 14);
   run.forEach((r, i) => {
     const row = document.createElement('div');
     row.className = 'summary-row';
     row.style.borderColor = r.color;
     row.style.background = `linear-gradient(90deg, ${r.color}22, var(--bg-card))`;
-    row.style.animationDelay = (i * 0.12) + 's';
+    row.style.animationDelay = Math.min(i * 0.12, 1.6) + 's';
 
     const badge = document.createElement('div');
     badge.className = 'summary-badge';
@@ -715,6 +754,7 @@ function showSummary() {
     list.appendChild(row);
   });
 
+  state.groupId++;              // everyone after this belongs to the next group
   setCeremonyPhase('summary');
   show('summaryState');
   fireGroupConfetti(run.map(r => r.color));
@@ -743,6 +783,7 @@ function cancelSort() {
     returnStep(state.pending.step, state.pending.houseIdx);
     const name = state.pending.name;
     state.pending = null;
+    renderQueue();
     setCeremonyPhase('input');
     $('readyState').style.display = 'none';
     $('inputState').classList.add('visible');
@@ -762,12 +803,21 @@ function cancelSort() {
 //  n >= 3 -> regular n-gon, flat-topped point upward
 //  n > 10 -> n-gon plus a centre dot, since high-n polygons all read as
 //            circles; past this the glyph only says "deep in a long queue"
+//  n = -1 -> X   (run complete; tap to celebrate)
 function queueGlyphSVG(n) {
   const open = '<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" '
              + 'fill="none" stroke="currentColor" stroke-width="1.6" '
              + 'stroke-linejoin="round" stroke-linecap="round">';
 
-  if (n <= 0) {
+  if (n < 0) {
+    // Run is spent and being held open. Distinct from plain infinity so the
+    // toggle always has somewhere visible to go — an exhausted queue used to
+    // show infinity whether held or not, so tapping produced no visible change
+    // and there was no way to tell the tap had registered.
+    return open + '<line x1="4.2" y1="4.2" x2="11.8" y2="11.8" stroke-width="2.2"/>'
+                + '<line x1="11.8" y1="4.2" x2="4.2" y2="11.8" stroke-width="2.2"/></svg>';
+  }
+  if (n === 0) {
     // Two touching rings — the lemniscate rendered in the same geometric
     // language as the polygons rather than as a text character.
     return open
@@ -790,10 +840,14 @@ let lastGlyphN = null;
 function updateQueueGlyph() {
   const el = $('queueGlyph');
   if (!el) return;
-  // A held queue really does spin at even chance next, so infinity is honest.
-  const n = (state.queuePaused || !runActive() || runExhausted())
-    ? 0
-    : state.cursor + 1;
+  // -1 = the next Confirm ends the group and celebrates  (X)
+  //  0 = the next Confirm just records a random spin       (infinity)
+  //  k = the next Confirm moves to queue slot k            (k-sided figure)
+  let n;
+  const eff = effectiveCursor();
+  if (endsOnNextConfirm())                                            n = -1;
+  else if (runActive() && !state.queuePaused && eff < state.steps.length) n = eff + 1;
+  else                                                                n = 0;
   if (n === lastGlyphN) return;
   el.innerHTML = queueGlyphSVG(n);
   if (lastGlyphN !== null) {
@@ -846,7 +900,7 @@ function buildToggles() {
 }
 
 function beginRunIfNeeded() {
-  if (state.steps.length === 0) { state.runId++; state.cursor = 0; }
+  if (state.steps.length === 0) { state.cursor = 0; state.endOverride = null; }
 }
 
 function addPool() {
@@ -880,19 +934,32 @@ function addFree() {
 // whole thing away. The glyph changing shape is the confirmation.
 function toggleQueuePause(ev) {
   if (ev) ev.stopPropagation();          // don't also open the modal
-  if (!runActive()) return;              // nothing to hold
-  state.queuePaused = !state.queuePaused;
-  renderQueue();
 
-  // Close out ONLY when nothing is awaiting Confirm.
-  //
-  // Bug this guards against, found in live use: resuming while a spin's result
-  // was still on screen ran showSummary() immediately, which discarded
-  // state.pending. That person was never recorded, never appeared in the
-  // celebration, and the operator never got to press Confirm. Resuming with a
-  // pending spin now just resumes — acceptSpin() closes the run a moment later
-  // and the person is included, which is what you'd expect anyway.
-  if (!state.queuePaused && runExhausted() && !state.pending) {
+  // X -> "not yet". Works whether the X came from the queue running out or was
+  // armed by hand, and it's how you extend past the last queued person.
+  if (endsOnNextConfirm()) {
+    state.endOverride = false;
+    renderQueue();
+    return;
+  }
+
+  // A queue slot still waits: the shape/infinity pair means hold vs resume.
+  if (runActive() && state.cursor < state.steps.length) {
+    state.queuePaused = !state.queuePaused;
+    state.endOverride = null;            // back to deciding automatically
+    renderQueue();
+    return;
+  }
+
+  // Nothing left to advance to. The only thing the glyph can offer is an ending.
+  if (state.pending) {
+    // Never celebrate over an unconfirmed result — that bug lost someone
+    // mid-ceremony. Arm it instead; Confirm celebrates and includes them.
+    state.endOverride = true;
+    renderQueue();
+    return;
+  }
+  if (state.results.some(r => r.groupId === state.groupId)) {
     closeRun();
     renderQueue();
     showSummary();
@@ -901,8 +968,8 @@ function toggleQueuePause(ev) {
 
 // End a run early — e.g. only two of the three people turned up.
 function finishRunNow() {
-  if (!runActive()) return;
-  const had = state.results.some(r => r.runId === state.runId);
+  const had = state.results.some(r => r.groupId === state.groupId);
+  if (!had) return;
   closeRun();
   closeQueue();
   renderQueue();
@@ -955,11 +1022,14 @@ function renderQueue() {
   updateQueueGlyph();
   const skipBtn = $('skipBtn');
   if (skipBtn) {
-    skipBtn.disabled = !runActive();
-    skipBtn.textContent = state.queuePaused ? 'Resume the queue' : 'Hold the queue';
+    skipBtn.disabled = false;
+    skipBtn.textContent = endsOnNextConfirm() ? 'Not yet — keep going'
+      : (runActive() && state.cursor < state.steps.length)
+        ? (state.queuePaused ? 'Resume the queue' : 'Hold the queue')
+        : (state.pending ? 'End after this one' : 'Finish and celebrate');
   }
   const finishBtn = $('finishRunBtn');
-  if (finishBtn) finishBtn.disabled = !runActive();
+  if (finishBtn) finishBtn.disabled = !state.results.some(r => r.groupId === state.groupId);
   const rs = $('resultsSection');
   if (rs) {
     rs.style.display = state.results.length ? 'block' : 'none';
