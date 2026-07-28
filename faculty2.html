@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sorting Wheel — Faculty</title>
+<title>Sorting Wheel — Faculty v2.4.0</title>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="sorting-wheel.css">
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -13,6 +13,8 @@
 <script src="animations.js"></script>
 </head>
 <body>
+
+<div class="build-stamp" id="buildStamp"></div>
 
 <div class="loading-overlay" id="loadingOverlay">
   <div class="spinner"></div>
@@ -256,7 +258,7 @@
 <script>
 // ============================================================
 //  SORTING WHEEL — FACULTY CEREMONY
-//  faculty.html v2.3.0
+//  faculty.html v2.4.0
 // ============================================================
 //  A separate page for spinning new staff into houses.
 //
@@ -282,6 +284,7 @@
 //  queue modal only.
 // ============================================================
 
+const FACULTY_VERSION = '2.4.0';
 const $ = id => document.getElementById(id);
 const show = (el) => { if (typeof el === 'string') el = $(el); el.classList.add('active','visible'); };
 const hide = (el) => { if (typeof el === 'string') el = $(el); el.classList.remove('active','visible'); };
@@ -460,7 +463,7 @@ async function enterCeremony() {
 // Apply branding exactly the way index.html does, so the two screens match.
 function finishEnter() {
   $('ceremonySchoolName').textContent = state.schoolName;
-  document.title = `${state.schoolName || 'Sorting Wheel'} — Faculty`;
+  document.title = `${state.schoolName || 'Sorting Wheel'} — Faculty v${FACULTY_VERSION}`;
 
   if (state.schoolLogoUrl) {
     $('ceremonyLogoBtn').innerHTML = `<img src="${state.schoolLogoUrl}" alt="School Logo">`;
@@ -880,7 +883,16 @@ function toggleQueuePause(ev) {
   if (!runActive()) return;              // nothing to hold
   state.queuePaused = !state.queuePaused;
   renderQueue();
-  if (!state.queuePaused && runExhausted()) {
+
+  // Close out ONLY when nothing is awaiting Confirm.
+  //
+  // Bug this guards against, found in live use: resuming while a spin's result
+  // was still on screen ran showSummary() immediately, which discarded
+  // state.pending. That person was never recorded, never appeared in the
+  // celebration, and the operator never got to press Confirm. Resuming with a
+  // pending spin now just resumes — acceptSpin() closes the run a moment later
+  // and the person is included, which is what you'd expect anyway.
+  if (!state.queuePaused && runExhausted() && !state.pending) {
     closeRun();
     renderQueue();
     showSummary();
@@ -984,6 +996,33 @@ document.addEventListener('keydown', e => {
   else if (state.ceremonyPhase === 'summary') closeSummary();
   else if (state.ceremonyPhase === 'ready') showInputs();
 });
+
+// ------------------------------------------------------------
+//  Build stamp — what is actually loaded right now
+// ------------------------------------------------------------
+//  index.html and faculty.html both depend on sorting-wheel.css and
+//  animations.js. Uploading one file and forgetting another is the
+//  easiest mistake to make with a no-build, upload-by-hand deploy, and
+//  the symptom can be subtle. So each shared file publishes its own
+//  version and the page reports what it actually got, rather than what
+//  it expects.
+function renderBuildStamp() {
+  const cssV = (getComputedStyle(document.documentElement)
+    .getPropertyValue('--sw-css-version') || '').trim().replace(/["']/g, '') || 'MISSING';
+  const animV = window.SW_ANIMATIONS_VERSION || 'MISSING';
+  const el = $('buildStamp');
+  el.textContent = `faculty ${FACULTY_VERSION} \u00b7 css ${cssV} \u00b7 anim ${animV}`;
+  el.title =
+    `faculty.html  ${FACULTY_VERSION}\n` +
+    `sorting-wheel.css  ${cssV}\n` +
+    `animations.js  ${animV}\n\n` +
+    `"MISSING" means that file did not load — re-upload it.`;
+  if (cssV === 'MISSING' || animV === 'MISSING') {
+    el.style.color = 'var(--danger)';
+    el.style.opacity = '1';
+  }
+}
+renderBuildStamp();
 
 // ------------------------------------------------------------
 //  Boot
