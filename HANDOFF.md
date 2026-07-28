@@ -3,17 +3,25 @@
 Technical notes for whoever picks this up next, human or Claude.
 Operational instructions live in `README.md`; this file is the code map.
 
-**Handoff version:** 1.13.0
-**App version at handoff:** `index.html` 1.9.1, `faculty.html` 2.6.1, `animations.js` 1.2.0, `sorting-wheel.css` 1.3.0, `ellis.html` 1.2.0
-**Session:** Rounds 1-2 of documented work. Claude instance name: **Trilby**
-— a hat that reads code instead of minds, for an app that sorts students into
-houses. Predecessors on other Jake projects: Fable, Stedman. Do not reuse.
+**Handoff version:** 1.14.0
+**App version at handoff:** `index.html` 1.9.1, `faculty.html` 2.6.1, `animations.js` 1.3.0, `sorting-wheel.css` 1.3.1, `ellis.html` 1.2.0
+**Session:** Round 3 of documented work. Claude instance name: **Vernier**
+— the scale that lets you read the fine gradations between the marks, which was
+the assignment. Predecessors: Trilby (this project), Fable and Stedman (other
+Jake projects). Do not reuse.
 
-**Context at handoff:** the app was built in an earlier undocumented session
-and tested by four students. It works. It was about to be used to sort ~150
-rising 6th graders. This session was a cold-read audit plus fixes, with no
-access to the live spreadsheet or a browser — all verification was static
-analysis, jsdom, and simulation.
+**Context at handoff:** built in an earlier undocumented session, tested by four
+students, then audited and hardened across rounds 1-2 (Trilby). Round 3 was an
+independent re-audit: Jake reported that the previous session had started making
+mistakes and asked for the mathematics in particular to be checked with a
+fine-toothed comb. Verification was static analysis, jsdom, and simulation of
+the *shipped* functions. Still no browser, still no access to the live sheet.
+
+**Round 3 verdict:** the sorting mathematics is correct and was not touched. One
+live deployment defect was found and fixed (a duplicated stylesheet — see
+"The duplicated stylesheet" below), two latent bugs were fixed in
+`animations.js`, and several claims in this file were found stale or
+self-contradictory and have been corrected.
 
 ---
 
@@ -187,9 +195,10 @@ setting `textContent` on the banner itself destroys its structure.
 
 ## Shared animation module
 
-`animations.js` + `animations.css` hold the eight ceremony animations, used by
-both pages. Extracted in v1.7.0 so the faculty page didn't need a second copy of
-704 lines that would drift.
+`animations.js` holds the eight ceremony animations, used by both pages.
+Extracted in v1.7.0 so the faculty page didn't need a second copy of 704 lines
+that would drift. Its CSS now lives in `sorting-wheel.css` — the separate
+`animations.css` was folded in and deleted, and nothing should reference it.
 
 No build step. `animations.js` is a classic script that installs a factory:
 
@@ -227,16 +236,28 @@ Notes on the extraction:
   `index.html` — they're admin UI, not animation logic.
 - `ANIMATION_META` moved into the module because both pages need it.
 
-`animations.css` was extracted the same way. Its rules depend on these custom
-properties, which the host page must define: `--accent-gold`, `--bg-card`,
-`--bg-deep`, `--bg-secondary`, `--text-muted`.
+The animation rules were extracted the same way and now live in
+`sorting-wheel.css`. They depend on these custom properties, which the host page
+must define: `--accent-gold`, `--bg-card`, `--bg-deep`, `--bg-secondary`,
+`--text-muted`. One keyframe, `bracket-color-pulse`, is **not** in the stylesheet
+— `animateBracket` injects it at runtime under `#bracketPulseStyle`. That is
+deliberate and it is the only such case; don't "fix" it by half-moving it.
 
 ### Verification
 
 `test_anim.js` loads `index.html` + `animations.js` in jsdom, stubs Firebase and
 canvas, then **invokes all eight animations and awaits each Promise.** Also runs a
 two-house config to confirm nothing assumes four. `test_faculty.js` does the same
-against `faculty.html`'s DOM.
+against `faculty.html`'s DOM. (Neither file is currently in the repo — see "Test
+suites" above.) Round 3 reproduced this check ad hoc across `index.html` and
+`faculty.html` at 2, 4 and 5 houses; all eight resolve on both pages.
+
+**Collapse the timers, don't wait them out.** The animations are several seconds
+each, so a suite that runs them honestly takes minutes. Overriding
+`window.setTimeout` to fire at zero delay preserves ordering — the animations are
+sequential chains — and makes hundreds of runs practical. That is how the bracket
+fix below was verified over 200 runs per house count. `requestAnimationFrame`
+still needs `pretendToBeVisual: true`.
 
 jsdom needs `pretendToBeVisual: true` or four of the animations fail on a missing
 `requestAnimationFrame`. That's a harness requirement, not a bug.
@@ -274,7 +295,16 @@ Deliberate differences, all invisible during the ceremony:
 
 ## Test suites — and a warning about the runner
 
-Suites live in `tests/`. Run them with `tests/run_tests.sh`.
+**Status as of 1.14.0: there is no `tests/` directory in the repository.** This
+section and the "Testing" section near the bottom of this file used to
+contradict each other outright — one described a suite in detail, the other said
+"there is no test suite" — and the repo contained neither. Whether the suites
+were never committed, were deleted, or live only on Jake's machine is unknown;
+ask him before recreating them from scratch. Everything below is preserved
+because the *lesson* is still worth having, and because it is the spec if you
+rebuild them.
+
+If they exist, suites live in `tests/` and are run with `tests/run_tests.sh`.
 
 **The runner checks exit code, `***` markers, output length, and that at least
 one assertion actually printed.** All four matter. An earlier runner only grepped
@@ -381,6 +411,79 @@ Two things that will bite an editor:
 Shuffle count was trimmed from `12 + n*3` at 250ms to `8 + n*2` at 200ms to pay
 for the new opening, keeping total runtime roughly where it was.
 
+## animateBracket — the final must contain the winner (animations 1.3.0)
+
+**The bracket crowned the wrong house whenever there were five or more houses.**
+
+The animation stages one round of semis and one final. Semis are built by pairing
+off a shuffled house order two at a time, so `n` houses give `ceil(n / 2)`
+matchups. The final then took `semiWinners.slice(0, 2)` — which is only ever safe
+at `n <= 4`, where there are exactly two semis.
+
+At five or more houses there are three or more semi winners, and the house that
+was actually sorted could win its semi and then be left out of its own final.
+`runMatchup` was still told `winner = targetIdx`, its `winner === idxA ? elA : elB`
+fell through to `elB`, and the card on the right got the champion glow — in the
+target's colour, under a different house's name — a second before the reveal
+announced the correct house.
+
+Measured over 20,000 simulated spins per configuration:
+
+| houses | wrong champion |
+|---|---|
+| 2, 3, 4 | 0% |
+| 5 | 19.9% |
+| 6 | 33.8% |
+| 8 | 49.9% |
+
+Ellis runs four houses, so this never fired in production. It is recorded at
+length because it is a **counterexample to a claim made elsewhere in this file**:
+"5 houses instead of 4 — gap 0, nothing hardcodes 4" was true of the sorting
+maths and false of the animations. Adding a fifth house is not a config change;
+re-test the animations if it ever happens.
+
+The fix seeds one side of the final with `targetIdx` directly and draws its
+opponent at random from the other semi winners, then randomises which side the
+target sits on so the champion isn't always the same slot. `runMatchup` also
+gained a tripwire that `console.error`s if it is ever asked to crown a house that
+isn't in the matchup, instead of quietly picking one. Verified: 0% wrong at 2, 3,
+4, 5, 6 and 8 houses over 200 real end-to-end runs each, tripwire never fires.
+
+Note that with 5+ houses the third and later semi winners now win a match and
+then simply sit there. This is a *flavour* bracket, not a real tournament, and
+making it a true single-elimination ladder would mean multiple rounds and a
+layout rewrite. Left as is deliberately.
+
+## buildRollerStrip — a shuffle that wasn't (animations 1.3.0)
+
+The roller is the default animation on both pages, and its card sequence was
+`(i + cycle * 3) % n`. Despite the comment calling it a shuffle, that is a
+monotonic 0,1,2,3 walk with its start point nudged each cycle. Two consequences:
+
+1. **At every cycle boundary the +3 offset and the +1 index cancelled mod 4**, so
+   the same house appeared on both sides of the seam. With four houses that is
+   **eight duplicated cards per spin out of 33**, on the animation everyone sees
+   by default. Three and six houses happened to come out clean, which is
+   presumably how it passed review.
+2. The strip length was `n * cycles + targetIndex + 1`, so the distance travelled
+   depended on which house had won. Fixed duration, variable distance, therefore
+   variable speed. Nobody was going to clock it, but a wheel whose spin varies
+   with its own answer is a bad idea in a room full of people looking for a tell.
+
+Now: eight genuine Fisher-Yates shuffles of the full house list, with two
+constraints — a cycle may not start on the house the previous one ended on, and
+the last cycle may not end on the winner. Length is constant at `n * cycles + 1`.
+Every house still appears exactly eight times, so the strip carries no
+information about the outcome.
+
+Verified over 3,000 generated strips per house count using the real exported
+`buildRollerStrip`: zero adjacent repeats at 3, 4, 5, 6 and 8 houses; length
+constant; final card always the target; each house appearing exactly 8 times.
+
+**Two houses is the one case that cannot be fully satisfied** — with only two
+cards the two constraints conflict about half the time and one repeat survives,
+which is inherent rather than a bug. A two-house roller is a-b-a-b regardless.
+
 ## A process failure worth not repeating
 
 While rewriting the tap handler I used `str.replace()` with a pattern that no
@@ -396,6 +499,44 @@ if old not in s: sys.exit("NO MATCH: " + label)
 
 Same class of problem as the test runner that reported dead suites as green:
 silence read as success.
+
+## The duplicated stylesheet (found and fixed in round 3)
+
+**`sorting-wheel.css` shipped containing a complete second copy of itself.** A
+stale v1.1.0 copy of all 216 rules sat appended after the v1.3.0 copy, the two
+joined mid-line immediately after `.build-stamp:hover`. 51.8 KB where 26 KB
+belonged.
+
+The interesting part is what it did, because it is not what you would guess.
+The two copies were byte-identical apart from the version string and four
+declarations on `.build-stamp`. Since the stale block came **second**, it won the
+cascade at equal specificity. So:
+
+- v1.3.0's build-stamp restyle was silently reverted to the old 10px / 0.45
+  styling, and
+- every page reported **`css 1.1.0`** in its own build stamp.
+
+That second one matters. The build stamp is the mechanism this project uses to
+catch a forgotten upload, and here it reported a *forgotten upload* when the real
+fault was a *doubled file*. Jake would have re-uploaded the same broken file and
+watched the stamp refuse to change.
+
+Three things to take from it:
+
+1. **A version stamp proves which bytes won, not which file arrived.** If the
+   stamp reports an older version than the header of the file you just uploaded,
+   check the file's length before you re-upload anything.
+2. **This is the append-instead-of-replace failure again**, one layer out from
+   the `str.replace()` incident above. Same root cause: a scripted edit whose
+   result nobody measured.
+3. **Assert on size, not just on content.** Any scripted rewrite of a whole file
+   should check that the output is roughly the size you expect. A dedupe that
+   doubles a file and a patch that vanishes are both invisible to a grep for the
+   thing you were trying to add.
+
+Fixed in css 1.3.1: one copy, ~26 KB, both published version literals bumped so
+the stamp reads `css 1.3.1` and confirms the upload took. The deduplicated file
+was diffed against the surviving half byte-for-byte — no rules were lost.
 
 ## Version reporting
 
@@ -737,14 +878,39 @@ station propagates to the others on their next student. It deliberately does
 | Overshoot — 220 arrive when 181 expected | gap 1, fallback holds level |
 | Undershoot — 160 arrive when 181 expected | gap ~5 |
 | Mid-event switch target → slider 75 | gap 4, safe |
-| 5 houses instead of 4 | gap 0, nothing hardcodes 4 |
+| 5 houses instead of 4 | gap 0, nothing in the *sorting maths* hardcodes 4 (the bracket animation did — see "animateBracket") |
 | Sheet with no new keys (backwards compat) | defaults to slider, 4 houses parsed |
 | Target mode with target unset | falls back to slider blend |
 
 Test harness: `test_v16.js` and `test_extra.js`. They load `index.html` in
 jsdom, stub Firebase, and export the lexically-scoped `state` via an appended
-`globalThis.state = state`. Recreate them from the snippets in "Testing" below
-if lost.
+`globalThis.state = state`. Neither is in the repo; recreate them from the
+snippets in "Testing" below if you need them.
+
+### Re-verified independently in round 3
+
+Everything above was re-derived from scratch against the shipped functions, on
+the assumption that the previous session's conclusions might be wrong. They
+weren't. The maths is correct and was not modified.
+
+| Check | Result |
+|---|---|
+| Target mode, real Ellis numbers, 181 students, 2,000 trials | 141/141/141/141 every time, gap 0.00 |
+| Sensitivity table above, re-measured | reproduces to within 0.2 (e.g. entered 150 → 1.23 / 2.18 / 2.09 / 2.07 vs the documented 1.2 / 2.1 / 2.1 / 2.1) |
+| `weightedSelect()` bias, 400,000 draws on a fixed distribution | χ² = 4.04 on 3 df (5% threshold 7.81) — no detectable bias |
+| Probability vectors sum to 1 | exact, zero float residual, so the last-index fallback never fires |
+| `recomputeTarget()` call sites | called **only** from `onExpectedIncomingChange`; the "target climbs all night" bug has not regressed |
+| Baseline arithmetic in "Real numbers as of July 2026" | correct: 99+85+97+102 = 383; needs 42/56/44/39 = 181; Callidus 56/181 = 30.9%, matching "about 31%" |
+| Degenerate inputs (all at target, all zero, one house over, one seat left, target unset) | all behave; no throws, no NaN, no negative weights |
+| Duplicate element IDs, inline handler resolution, `$('id')` resolution, JS syntax | clean on both pages |
+
+**One thing worth knowing operationally:** in target mode a house that has
+reached its target legitimately drops to **0.0%**, because the `+1` deficit floor
+exists only in slider mode. That is correct — it is how the event lands exactly
+even — but if "Show Probabilities" is up on a screen late in the day, an observer
+will see a house sitting at zero, and the last few students are effectively
+determined. Not a bug; don't "fix" it by adding a floor, which would reintroduce
+a final gap.
 
 ---
 
@@ -822,35 +988,35 @@ that referred to the file as `go.html`.
 
 Ordered by value. Nothing here is required for anything to work.
 
-**1. Reconcile the duplicated animation CSS.**
-`animations.css` was extracted for `faculty.html`, but `index.html` still carries
-its own inline copy of those ~46 rule blocks. Left that way on purpose: touching
-`index.html`'s stylesheet days before registration risked a visual regression
-nobody would notice until go-live. After registration, delete those blocks from
-`index.html` and add `<link rel="stylesheet" href="animations.css">`. Verify by
-spinning each animation in a real browser, not in jsdom.
+> **Removed in 1.14.0 — "Reconcile the duplicated animation CSS."** This item
+> said `index.html` still carried an inline copy of the animation rules and told
+> the next person to add `<link rel="stylesheet" href="animations.css">`. Both
+> halves were wrong by the time anyone could read it: `index.html` has no
+> `<style>` block at all any more, and `animations.css` was deleted when it was
+> folded into `sorting-wheel.css`. Following the instruction would have linked a
+> 404. Recorded rather than silently deleted, so nobody re-derives it.
 
-**2. In-app undo / last-sort correction.**
+**1. In-app undo / last-sort correction.**
 Typos currently require opening the spreadsheet. A "fix last entry" button that
 rewrites the most recent row appended by the current user would cover the common
 case. Note the Roster is a hybrid (see SECOND INVARIANT) — an undo must only ever
 touch static appended rows, never the formula mirror block.
 
-**3. Duplicate-name warning at sort time.**
+**2. Duplicate-name warning at sort time.**
 With several stations running, the same student getting sorted twice is the
 likeliest data error. A soft warning would catch it live. README §7 has a
 conditional-formatting workaround needing no code.
 
-**4. Add a graduation-year / `Class Of` column to the Roster.**
+**3. Add a graduation-year / `Class Of` column to the Roster.**
 Low priority now — the master-list link means the annual rollover is already
 mostly automatic. Still, the only way to identify which appended rows belong to
 which year is the Timestamp column. Would mean extending `Roster!A:E` to `A:F`.
 
-**5. Config key lookups instead of fixed row offsets.**
+**4. Config key lookups instead of fixed row offsets.**
 Removes the "never insert a row above 9" landmine. Needs a live-sheet migration,
 so not something to do near an event.
 
-**6. Session countdown in the header.**
+**5. Session countdown in the header.**
 The pre-flight check catches expiry, but showing "session ends 2:47" would let
 operators refresh at a natural gap rather than mid-line.
 
@@ -866,7 +1032,9 @@ operators refresh at a natural gap rather than mid-line.
 
 ## Testing
 
-There is no test suite. Verification this session was:
+There is no `tests/` directory in the repo — see "Test suites" above for the
+contradiction this used to create. Verification is currently ad hoc. The
+round 1-2 baseline was:
 
 ```bash
 # Extract and syntax-check the inline JS
@@ -889,6 +1057,42 @@ for(const id of ['loginScreen','setupScreen','unauthorizedScreen','ceremonyScree
 
 Also worth re-running when touching the DOM: the inline-handler and `$('id')`
 resolution checks described under "Verified."
+
+### Round 3 additions
+
+Three cheap checks that would have caught this round's findings:
+
+```bash
+# 1. Doubled file. Would have caught the duplicated stylesheet immediately.
+#    Any repo file whose header comment appears more than once is suspect.
+for f in *.css *.js *.html; do
+  n=$(grep -c "SORTING WHEEL" "$f"); [ "$n" -gt 1 ] && echo "$f: header x$n"
+done
+# And: exactly one --sw-css-version declaration must exist.
+grep -c "sw-css-version:" sorting-wheel.css   # must be 1
+
+# 2. Every JS file and inline block parses.
+node --check animations.js
+python3 -c "import re;h=open('index.html').read();\
+open('/tmp/app.js','w').write(re.search(r'<script(?![^>]*src=)[^>]*>(.*?)</script>',h,re.S).group(1))"
+node --check /tmp/app.js
+```
+
+For the animations, load `animations.js` into a jsdom context, build the factory
+with a stub `$` and a synthetic `getHouses()`, override `window.setTimeout` to
+zero delay, and assert on the DOM afterwards:
+
+- **bracket** — after `animations.bracket(t)` resolves, the single
+  `.bracket-champion` element's text must equal `houses[t].name`. Run it at 2, 3,
+  4, 5, 6 and 8 houses; four houses alone will not catch anything.
+- **roller** — after `buildRollerStrip(t)`, read the `.roller-card-name` spans:
+  no two adjacent may match, the last must be the target, each house must appear
+  exactly 8 times, and the length must not vary with `t`.
+- **all eight** — invoke each and await its Promise, against both `index.html`
+  and `faculty.html` DOMs, at more than one house count.
+
+The zero-delay `setTimeout` override is what makes this practical; honest timing
+puts a full sweep in the tens of minutes.
 
 **What could not be verified without a browser or the live sheet:**
 every animation actually rendering, Firebase Storage rules permitting logo
