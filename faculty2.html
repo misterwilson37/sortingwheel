@@ -89,7 +89,7 @@
       <div class="result-house-name" id="resultHouseName"></div>
       <div class="result-student-name" id="resultPersonName"></div>
       <div class="result-actions">
-        <button class="btn btn-gold" id="approveBtn" onclick="acceptSpin()">&#10003; Next</button>
+        <button class="btn btn-gold" id="approveBtn" onclick="acceptSpin()">&#10003; Confirm</button>
         <button class="btn btn-outline" onclick="cancelSort()">&#10007; Re-sort</button>
       </div>
     </div>
@@ -113,7 +113,7 @@
     <div class="admin-drawer-tab" onclick="openQueue()">
       <span class="chevron">&#9650;</span>
       <span>Faculty Controls</span>
-      <span class="queue-glyph" id="queueGlyph"></span>
+      <span class="queue-glyph" id="queueGlyph" onclick="toggleQueuePause(event)" title=""></span>
     </div>
   </div>
 </div>
@@ -167,7 +167,7 @@
       <h3>Queue <span id="queueCount" style="font-weight:400; color:var(--text-muted); font-size:12px;"></span></h3>
       <div class="queue-list" id="queueList"></div>
       <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;">
-        <button class="btn btn-outline" style="font-size:12px; padding:6px 12px;" id="skipBtn" onclick="toggleSkipNext()">Make the next spin off-queue</button>
+        <button class="btn btn-outline" style="font-size:12px; padding:6px 12px;" id="skipBtn" onclick="toggleQueuePause()">Make the next spin off-queue</button>
         <button class="btn btn-outline" style="font-size:12px; padding:6px 12px;" id="finishRunBtn" onclick="finishRunNow()">Finish the run now</button>
         <button class="btn btn-ghost" style="font-size:12px;" onclick="clearQueue()">Clear queue</button>
       </div>
@@ -242,7 +242,7 @@
    and so on. The infinity sign means the next spin is a plain even chance.
    Reads as decoration to anyone who isn't looking for it, which is the point:
    a room of cynical adults will pounce on anything that says "3 of 4". */
-.queue-glyph { display: inline-flex; align-items: center; width: 16px; height: 16px; opacity: 0.55; }
+.queue-glyph { display: inline-flex; align-items: center; width: 16px; height: 16px; opacity: 0.55; cursor: pointer; padding: 4px; margin: -4px; }
 .queue-glyph svg { width: 16px; height: 16px; display: block; }
 .admin-drawer-tab:hover .queue-glyph { opacity: 0.8; }
 .queue-glyph.bump svg { animation: glyph-bump 0.45s ease; }
@@ -256,7 +256,7 @@
 <script>
 // ============================================================
 //  SORTING WHEEL — FACULTY CEREMONY
-//  faculty.html v2.2.0
+//  faculty.html v2.3.0
 // ============================================================
 //  A separate page for spinning new staff into houses.
 //
@@ -303,8 +303,8 @@ const state = {
   steps: [],        // optional queue; empty means even chance every spin
   pools: {},        // poolId -> houseIdx[] still unassigned
   cursor: 0,
-  pending: null,    // {step, houseIdx, name, offQueue} awaiting Next / Re-sort
-  skipNext: false,  // one-shot: next spin ignores the queue entirely
+  pending: null,    // {step, houseIdx, name} awaiting Confirm / Re-sort
+  queuePaused: false, // hold the queue: spins go even-chance, position preserved
   runId: 0,         // increments each time a queue is started; tags results
   results: [],
   spinning: false
@@ -494,7 +494,9 @@ function setCeremonyPhase(phase) {
   if (phase !== 'summary') hide('summaryState');
   $('colorWash').classList.remove('active');
   $('animPicker').style.display = (phase === 'ready' || phase === 'input') ? 'flex' : 'none';
-  $('facultyDrawer').style.display = (phase === 'ready') ? 'block' : 'none';
+  // The drawer is deliberately NOT hidden per-phase: index.html leaves its admin
+  // drawer up throughout, and the glyph has to be reachable during a reveal so
+  // the queue can be held before Confirm closes out the run.
 }
 
 function showInputs() {
@@ -562,15 +564,14 @@ async function startSort() {
   state.spinning = true;
   $('sortBtn').disabled = true;
 
-  // An off-queue spin deliberately passes step = null, so resolveStep gives an
-  // even chance AND the cursor never advances. The queue is preserved exactly.
-  // (Consuming a queue entry here would be wrong: skipping a 'pool' step would
-  // leave one of the reserved houses permanently unassigned.)
-  const offQueue = state.skipNext;
-  const step = offQueue ? null : (state.steps[state.cursor] || null);
+  // While the queue is held, pass step = null: resolveStep gives an even chance
+  // AND the cursor never advances, so the run keeps its place.
+  // (Consuming a queue entry instead would be wrong — skipping a 'pool' step
+  // would leave one of the reserved houses permanently unassigned.)
+  const step = (state.queuePaused || !runActive()) ? null : (state.steps[state.cursor] || null);
   const houseIdx = resolveStep(step);
   const house = state.houses[houseIdx];
-  state.pending = { step, houseIdx, name, offQueue };
+  state.pending = { step, houseIdx, name };
 
   setCeremonyPhase('spinning');
   try {
@@ -619,26 +620,44 @@ function showResult(house, personName) {
   fireConfetti(house.color);
 }
 
+// A "run" is open from the moment a queue is built until it closes out.
+function runActive() { return state.steps.length > 0; }
+function runExhausted() { return runActive() && state.cursor >= state.steps.length; }
+
+// Closing a run clears the queue, so anyone sorted afterwards belongs to no run
+// and can't be swept into a later summary.
+function closeRun() {
+  state.steps = [];
+  state.pools = {};
+  state.cursor = 0;
+  state.queuePaused = false;
+  poolCounter = 0;
+}
+
 function acceptSpin() {
   if (!state.pending) return;
   const { name, houseIdx, step } = state.pending;
   const h = state.houses[houseIdx];
+
+  // Anyone sorted while a run is open belongs to that run — including walk-ups
+  // spun with the queue held. They joined the group, so they join the
+  // celebration. Only spins with no run open at all are untagged.
   state.results.push({
     name, house: h.name, color: h.color, logoUrl: h.logoUrl,
     queued: !!step,
-    runId: step ? state.runId : null   // which run this belongs to, if any
+    runId: runActive() ? state.runId : null
   });
   if (step) state.cursor++;
-  if (state.pending.offQueue) state.skipNext = false;   // one-shot, now spent
   state.pending = null;
-  renderQueue();
 
-  // A defined queue just ran out -> celebrate the whole group together.
-  // Ad-hoc even-chance spins never trigger this; there is no "run" to close.
-  if (step && state.steps.length > 0 && state.cursor >= state.steps.length) {
+  // Close out only when the queue is spent AND not being held open.
+  if (runExhausted() && !state.queuePaused) {
+    closeRun();
+    renderQueue();
     showSummary();
     return;
   }
+  renderQueue();
   setCeremonyPhase('ready');
 }
 
@@ -650,7 +669,7 @@ function acceptSpin() {
 // mid-run: everyone before the interruption silently vanished from the summary.
 // That is exactly the situation off-queue exists to handle, so it has to work.
 function showSummary() {
-  const run = state.results.filter(r => r.queued && r.runId === state.runId);
+  const run = state.results.filter(r => r.runId === state.runId);
   if (!run.length) { setCeremonyPhase('ready'); return; }
 
   $('summaryTitle').textContent = run.length === 1
@@ -768,9 +787,8 @@ let lastGlyphN = null;
 function updateQueueGlyph() {
   const el = $('queueGlyph');
   if (!el) return;
-  // skipNext means the queue is paused for one walk-up, so the next spin
-  // really is an even chance — infinity is the honest glyph.
-  const n = (state.skipNext || !state.steps.length || state.cursor >= state.steps.length)
+  // A held queue really does spin at even chance next, so infinity is honest.
+  const n = (state.queuePaused || !runActive() || runExhausted())
     ? 0
     : state.cursor + 1;
   if (n === lastGlyphN) return;
@@ -848,32 +866,40 @@ function addFree() {
   buildToggles(); renderQueue();
 }
 
-// One-shot escape hatch for a surprise arrival part-way through a run.
-function toggleSkipNext() {
-  state.skipNext = !state.skipNext;
+// Hold / resume the queue. Bound to the glyph itself, so it's one tap from
+// wherever you are — including mid-reveal, before Confirm closes out a run.
+//
+// Sticky rather than one-shot: you might have two surprise arrivals, and you
+// might want to hold an exhausted queue open specifically to add someone to the
+// celebration. Resuming an exhausted queue is what closes the run.
+//
+// NO TOAST. A message reading "queue held" in front of the room would give the
+// whole thing away. The glyph changing shape is the confirmation.
+function toggleQueuePause(ev) {
+  if (ev) ev.stopPropagation();          // don't also open the modal
+  if (!runActive()) return;              // nothing to hold
+  state.queuePaused = !state.queuePaused;
   renderQueue();
-  showToast(state.skipNext
-    ? 'Next spin is an even chance; the queue is held'
-    : 'Next spin follows the queue again');
+  if (!state.queuePaused && runExhausted()) {
+    closeRun();
+    renderQueue();
+    showSummary();
+  }
 }
 
 // End a run early — e.g. only two of the three people turned up.
 function finishRunNow() {
-  if (!state.steps.length || state.cursor >= state.steps.length) return;
-  state.steps = [];
-  state.pools = {};
-  state.cursor = 0;
-  state.skipNext = false;
-  poolCounter = 0;
+  if (!runActive()) return;
+  const had = state.results.some(r => r.runId === state.runId);
+  closeRun();
   closeQueue();
   renderQueue();
-  const anyQueued = state.results.some(r => r.queued);
-  if (anyQueued) showSummary();
+  if (had) showSummary();
   else setCeremonyPhase('ready');
 }
 
 function clearQueue() {
-  state.steps = []; state.pools = {}; state.cursor = 0; poolCounter = 0; state.skipNext = false;
+  closeRun();
   poolPicks.clear(); excludePicks.clear();
   buildToggles(); renderQueue();
 }
@@ -917,14 +943,11 @@ function renderQueue() {
   updateQueueGlyph();
   const skipBtn = $('skipBtn');
   if (skipBtn) {
-    const pendingQueue = state.steps.length && state.cursor < state.steps.length;
-    skipBtn.disabled = !pendingQueue;
-    skipBtn.textContent = state.skipNext
-      ? 'Next spin is off-queue \u2713'
-      : 'Make the next spin off-queue';
+    skipBtn.disabled = !runActive();
+    skipBtn.textContent = state.queuePaused ? 'Resume the queue' : 'Hold the queue';
   }
   const finishBtn = $('finishRunBtn');
-  if (finishBtn) finishBtn.disabled = !(state.steps.length && state.cursor < state.steps.length);
+  if (finishBtn) finishBtn.disabled = !runActive();
   const rs = $('resultsSection');
   if (rs) {
     rs.style.display = state.results.length ? 'block' : 'none';
