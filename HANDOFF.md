@@ -3,8 +3,8 @@
 Technical notes for whoever picks this up next, human or Claude.
 Operational instructions live in `README.md`; this file is the code map.
 
-**Handoff version:** 1.11.0
-**App version at handoff:** `index.html` 1.9.0, `faculty.html` 2.4.0, `animations.js` 1.1.0, `sorting-wheel.css` 1.1.0, `ellis.html` 1.2.0
+**Handoff version:** 1.13.0
+**App version at handoff:** `index.html` 1.9.1, `faculty.html` 2.6.1, `animations.js` 1.2.0, `sorting-wheel.css` 1.3.0, `ellis.html` 1.2.0
 **Session:** Rounds 1-2 of documented work. Claude instance name: **Trilby**
 — a hat that reads code instead of minds, for an app that sorts students into
 houses. Predecessors on other Jake projects: Fable, Stedman. Do not reuse.
@@ -292,6 +292,48 @@ If you add a suite: load `animations.js` into the context first, pass
 `pretendToBeVisual: true` to jsdom, and make sure it prints at least one line
 containing `PASS`.
 
+## Groups, not runs (faculty 2.6.0)
+
+**A group is everyone sorted since the last celebration.** Results carry
+`groupId`; `showSummary` filters on it and then increments `state.groupId`. A
+queue is only a scheduling overlay on top of a group — a group needs no queue at
+all, which is what lets a stretch of plain walk-ups be celebrated together.
+
+This replaced a `runId` scheme where a run began when a queue was built and
+walk-ups before it were excluded. Two test assertions encoded that older rule and
+were updated, not "fixed" — the behaviour change was deliberate.
+
+## The glyph is a readout, not a button (faculty 2.6.0)
+
+**`Confirm` always drives the ceremony forward. The glyph only reports where
+forward goes.** Getting this backwards produced two rounds of confusing
+behaviour, including a version where the queue could only be ended by tapping the
+cross, which nobody would guess.
+
+`endsOnNextConfirm()` is the single predicate:
+
+```js
+if (state.endOverride !== null) return state.endOverride;
+if (!runActive()) return false;
+if (state.queuePaused) return false;
+return effectiveCursor() >= state.steps.length;
+```
+
+`effectiveCursor()` is `cursor + (pending queued spin ? 1 : 0)` — it counts the
+spin currently on screen, which is why the cross appears **on** the last queued
+person rather than after them. `acceptSpin` calls `endsOnNextConfirm()` **before**
+mutating state, since it reads `state.pending`.
+
+Glyph precedence: `endsOnNextConfirm()` &rarr; `-1` (cross); queue slot remaining
+and not held &rarr; `effectiveCursor() + 1` (shape); otherwise `0` (infinity).
+
+`state.endOverride` is a three-way: `null` decide automatically, `false` "not
+yet", `true` "end on the next Confirm". Cleared by `closeRun()` and by resuming.
+
+**`renderQueue()` must be called whenever `state.pending` changes** — on reveal
+and on re-sort. Otherwise the glyph lags a step, which is exactly how the
+readout stopped matching reality during testing.
+
 ## Queue position glyph (faculty 2.2.0)
 
 `queueGlyphSVG(n)` draws an n-sided figure in the dead space right of the
@@ -299,13 +341,61 @@ containing `PASS`.
 dot, `n = 2` vertical bar, `n >= 3` a regular n-gon, `n > 10` an n-gon plus a
 centre dot since high-n polygons are indistinguishable from circles.
 
-`n` is `cursor + 1`, or 0 when there is no queue, the queue is spent, or
-`skipNext` is armed.
+`n = -1` renders a cross, meaning the run is spent and waiting to be closed out.
+
+Precedence in `updateQueueGlyph`: no run &rarr; 0; exhausted &rarr; -1; held
+&rarr; 0; otherwise `cursor + 1`.
+
+**Why the cross exists.** An exhausted queue used to show infinity whether held
+or not, so tapping produced no visible change and there was no way to tell the
+tap had registered — a dead end found in live use after a long run.
+
+Superseded in 2.6.0: the cross now means "the next Confirm ends the group", shows
+exactly once on the last queued person, and **tapping it means "not yet"** — the
+way to extend past the end of a queue. See "The glyph is a readout" above.
 
 **Why not "3 of 4":** the audience is a room of adults who will pounce on any
 visible sign that the wheel is being steered. A small triangle reads as
 decoration. Keep any future queue indicator equally opaque — no numerals, no
 progress bars, no wording.
+
+## animateCards — three-card monte order
+
+Rewritten in `animations.js` 1.2.0. Cards are dealt **face up in alphabetical
+order**, held ~1.1s so they can be read, flipped face down, and only then
+shuffled. Previously they started face down, so there was nothing to track and
+you learned what you were looking at only after it finished.
+
+The flip is a scaleX(0) squash, content swap, scaleX(1) expand — no 3D card
+structure needed.
+
+Two things that will bite an editor:
+
+- `flipDown` sets an inline `transition`; `startShuffle` clears both inline
+  `transition` and `transform` so the stylesheet's `all 0.4s` drives `left`
+  again during the shuffle.
+- `revealCards` clears inline `transform` before adding `.shuffle-eliminated` /
+  `.shuffle-winner`, because those classes are transform-based and an inline
+  transform would beat them.
+
+Shuffle count was trimmed from `12 + n*3` at 250ms to `8 + n*2` at 200ms to pay
+for the new opening, keeping total runtime roughly where it was.
+
+## A process failure worth not repeating
+
+While rewriting the tap handler I used `str.replace()` with a pattern that no
+longer matched, because the source had already changed in an earlier round.
+Python's `replace` returns the original string silently, so the edit vanished and
+the stale function shipped. It was only caught by probing runtime behaviour.
+
+Any scripted edit to these files should assert the substitution happened:
+
+```python
+if old not in s: sys.exit("NO MATCH: " + label)
+```
+
+Same class of problem as the test runner that reported dead suites as green:
+silence read as success.
 
 ## Version reporting
 
