@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sorting Wheel v1.8.0</title>
+<title>Sorting Wheel v1.9.0</title>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
@@ -252,6 +252,8 @@
 </div>
 
 <!-- Loading & Error -->
+<div class="build-stamp" id="buildStamp"></div>
+
 <div class="loading-overlay" id="loadingOverlay">
   <div class="spinner"></div>
   <span id="loadingText" style="color:var(--text-secondary); font-size:14px;">Loading...</span>
@@ -268,7 +270,7 @@
 // ============================================================
 //  CONFIG (loaded from config.js)
 // ============================================================
-const APP_VERSION = '1.8.0';
+const APP_VERSION = '1.9.0';
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 // ============================================================
@@ -956,7 +958,7 @@ async function enterCeremony() {
 
     // Update UI with school info
     $('ceremonySchoolName').textContent = state.schoolName;
-    document.title = `${state.schoolName} — Sorting Wheel`;
+    document.title = `${state.schoolName} — Sorting Wheel v${APP_VERSION}`;
 
     // Set school logo on ceremony button
     const inner = $('ceremonyLogoBtnInner');
@@ -1996,12 +1998,35 @@ function showLogoPicker() {
 //  INIT
 // ============================================================
 // Version label
-$('versionLabel').textContent = `v${APP_VERSION}`;
+// ------------------------------------------------------------
+//  Build stamp — what is actually loaded right now
+// ------------------------------------------------------------
+//  This file now depends on sorting-wheel.css and animations.js.
+//  With a no-build, upload-by-hand deploy the easiest mistake is
+//  uploading one and forgetting another, so each shared file
+//  publishes its version and we report what actually arrived.
+(function renderBuildStamp() {
+  const cssV = (getComputedStyle(document.documentElement)
+    .getPropertyValue('--sw-css-version') || '').trim().replace(/["']/g, '') || 'MISSING';
+  const animV = window.SW_ANIMATIONS_VERSION || 'MISSING';
+  $('versionLabel').textContent = `v${APP_VERSION}`;
+  const el = $('buildStamp');
+  el.textContent = `app ${APP_VERSION} \u00b7 css ${cssV} \u00b7 anim ${animV}`;
+  el.title =
+    `index.html  ${APP_VERSION}\n` +
+    `sorting-wheel.css  ${cssV}\n` +
+    `animations.js  ${animV}\n\n` +
+    `"MISSING" means that file did not load — re-upload it.`;
+  if (cssV === 'MISSING' || animV === 'MISSING') {
+    el.style.color = 'var(--danger)';
+    el.style.opacity = '1';
+  }
+})();
 
 // Sheet ID resolution now happens at the top of this script,
 // before Firebase auth is initialised. See "RESOLVE WHICH
 // SPREADSHEET THIS STATION USES".
 </script>
-<!-- Sorting Wheel v1.8.0 -->
+<!-- Sorting Wheel v1.9.0 -->
 </body>
 </html>
