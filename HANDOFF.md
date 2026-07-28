@@ -3,8 +3,8 @@
 Technical notes for whoever picks this up next, human or Claude.
 Operational instructions live in `README.md`; this file is the code map.
 
-**Handoff version:** 1.7.0
-**App version at handoff:** `index.html` 1.8.0, `faculty.html` 2.0.0, `animations.js` 1.0.0, `sorting-wheel.css` 1.0.0, `ellis.html` 1.1.0
+**Handoff version:** 1.10.0
+**App version at handoff:** `index.html` 1.8.0, `faculty.html` 2.3.0, `animations.js` 1.0.0, `sorting-wheel.css` 1.0.0, `ellis.html` 1.1.0
 **Session:** Rounds 1-2 of documented work. Claude instance name: **Trilby**
 — a hat that reads code instead of minds, for an app that sorts students into
 houses. Predecessors on other Jake projects: Fable, Stedman. Do not reuse.
@@ -271,6 +271,100 @@ Deliberate differences, all invisible during the ceremony:
 - The admin drawer is a single tab that opens the queue modal.
 - `setCeremonyPhase` also hides the drawer outside the ready phase, so there is
   nothing to tap mid-ceremony.
+
+## Test suites — and a warning about the runner
+
+Suites live in `tests/`. Run them with `tests/run_tests.sh`.
+
+**The runner checks exit code, `***` markers, output length, and that at least
+one assertion actually printed.** All four matter. An earlier runner only grepped
+for `***`, which meant a suite that threw on import produced no output, no
+markers, and was reported as passing.
+
+That is not hypothetical: after the `animations.js` extraction, four suites
+(`test_v16`, `test_extra`, `test_counts`, `test_retry`) died on every run for
+several versions because they loaded `index.html`'s inline script without first
+loading `animations.js` into the same VM context. They reported green throughout.
+Target mode, count validation, and the IMPORTRANGE retry logic were unverified
+that whole time.
+
+If you add a suite: load `animations.js` into the context first, pass
+`pretendToBeVisual: true` to jsdom, and make sure it prints at least one line
+containing `PASS`.
+
+## Queue position glyph (faculty 2.2.0)
+
+`queueGlyphSVG(n)` draws an n-sided figure in the dead space right of the
+"Faculty Controls" tab: `n = 0` infinity (two touching rings), `n = 1` filled
+dot, `n = 2` vertical bar, `n >= 3` a regular n-gon, `n > 10` an n-gon plus a
+centre dot since high-n polygons are indistinguishable from circles.
+
+`n` is `cursor + 1`, or 0 when there is no queue, the queue is spent, or
+`skipNext` is armed.
+
+**Why not "3 of 4":** the audience is a room of adults who will pounce on any
+visible sign that the wheel is being steered. A small triangle reads as
+decoration. Keep any future queue indicator equally opaque — no numerals, no
+progress bars, no wording.
+
+## Holding the queue
+
+`state.queuePaused` is a **sticky** toggle bound to the glyph itself
+(`toggleQueuePause`, with `stopPropagation` so it doesn't also open the modal).
+While held, `startSort` passes `step = null`: even chance, and `cursor` never
+advances.
+
+**Do not "fix" this by consuming a queue entry.** Skipping a `pool` step would
+leave one of the reserved houses permanently unassigned, silently breaking the
+guarantee the set exists to provide.
+
+**Sticky, not one-shot.** Two reasons: there may be more than one walk-up, and
+holding an *exhausted* queue open is how you add someone to the final tally.
+Resuming an exhausted queue is what closes the run — `toggleQueuePause` checks
+`runExhausted()` on release and fires the summary.
+
+**No toast on toggle.** A visible "queue held" message in front of the room
+defeats the entire design. The glyph changing shape is the only feedback.
+
+Run lifecycle: `runActive()` = queue non-empty. `runExhausted()` = cursor past
+the end. `closeRun()` clears the queue so later spins belong to no run.
+
+## Everyone in a run is in its celebration
+
+`showSummary` filters on `r.runId === state.runId` only — **not** on
+`r.queued`. Anyone sorted while a run is open joins the celebration, including
+walk-ups spun with the queue held. That is intentional: they joined the group, so
+they join the group photo. Spins with no run open get `runId: null` and never
+appear.
+
+An earlier version excluded walk-ups. It was wrong, and the test that asserted
+it was wrong too.
+
+## Queue completion summary (faculty 2.1.0)
+
+When a **defined** queue reaches its end, `acceptSpin` calls `showSummary()`
+instead of returning to ready: a `'summary'` ceremony phase listing everyone from
+that run with house colour, logo, staggered reveal, and a two-corner confetti
+burst.
+
+Trigger condition is deliberately narrow — `step && state.steps.length > 0 &&
+state.cursor >= state.steps.length`. Ad-hoc even-chance spins must never trigger
+it, because there is no run to close, and because the summary is also the
+operator's signal that the queue is spent and spins have returned to even.
+
+Results are tagged with `runId`, incremented by `beginRunIfNeeded()` whenever the
+queue goes from empty to non-empty. `showSummary` filters on
+`r.queued && r.runId === state.runId`.
+
+**This replaced a trailing-block scan and the replacement matters.** The original
+walked backwards through `state.results` until it hit a non-queued entry. That
+broke the instant an off-queue walk-up happened mid-run: everyone before the
+interruption silently vanished from the summary — which is precisely the
+situation off-queue exists to handle. Caught by test, not by inspection. Don't
+revert to positional inference.
+
+Re-sort on the final queued spin must not trigger it either — `cancelSort` runs
+before `cursor` advances, so it doesn't. There is a test for this; keep it.
 
 ## Faculty queue model
 
