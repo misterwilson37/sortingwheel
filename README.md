@@ -11,7 +11,7 @@ spreadsheet — not the browser — is the source of truth.
 **Short link for staff:** https://sortingwheel.misterwilson.org/ellis.html
 **The spreadsheet:** https://docs.google.com/spreadsheets/d/1rYZ71el1yPjo1X7F71nI8WQ9LvCqY4g7r-iXr5IYQqE/edit
 
-Current version: **1.9.0**
+Current version: **1.9.1**
 
 ---
 
@@ -19,16 +19,16 @@ Current version: **1.9.0**
 
 | File | Version | What it is |
 |---|---|---|
-| `index.html` | 1.9.0 | The student sorting app. HTML + JS; CSS and animations are now external (see below). No build step. |
+| `index.html` | 1.9.1 | The student sorting app. HTML + JS; CSS and animations are now external (see below). No build step. |
 | `ellis.html` | 1.2.0 | Redirect page. Forwards to `index.html?sheet=<Ellis sheet ID>` so staff only have to remember one short URL. |
-| `faculty.html` | 2.4.0 | Separate ceremony for spinning **faculty** into houses. Visually identical to the student one. Never touches student counts or the Roster. See §10. |
-| `animations.js` | 1.1.0 | The eight ceremony animations, shared by `index.html` and `faculty.html`. |
-| `sorting-wheel.css` | 1.1.0 | The whole stylesheet, shared by both pages. One file so the two ceremonies cannot drift apart visually. |
+| `faculty.html` | 2.6.1 | Separate ceremony for spinning **faculty** into houses. Visually identical to the student one. Never touches student counts or the Roster. See §10. |
+| `animations.js` | 1.2.0 | The eight ceremony animations, shared by `index.html` and `faculty.html`. |
+| `sorting-wheel.css` | 1.3.0 | The whole stylesheet, shared by both pages. One file so the two ceremonies cannot drift apart visually. |
 | `tests/` | — | jsdom test suites and `run_tests.sh`. Not deployed; upload is optional. |
 | `config.js` | — | Firebase project keys (`categorizingcougar`). Safe to be public; Firebase web config is designed to be. |
 | `CNAME` | — | GitHub Pages custom domain: `sortingwheel.misterwilson.org` |
-| `README.md` | 1.12.0 | This file. |
-| `HANDOFF.md` | 1.11.0 | Technical notes for the next developer / Claude session. |
+| `README.md` | 1.14.0 | This file. |
+| `HANDOFF.md` | 1.13.0 | Technical notes for the next developer / Claude session. |
 
 Deployment is GitHub Pages. Upload the changed file through the GitHub web UI
 and it is live in about a minute. There is no build, no CLI, no bundler.
@@ -559,40 +559,63 @@ Exactly like the student version. Tap the logo, type a name, **SORT**, watch,
 then **✓ Next** or **✗ Re-sort**. Re-sort puts the house back into the set, so
 re-spinning someone doesn't quietly use up one of your reserved houses.
 
-### Knowing where you are, without telling the room
+### The shape tells you what Confirm will do
 
-To the right of **Faculty Controls** at the bottom of the ready screen there's a
-small shape. It tells you who's up next:
+To the right of **Faculty Controls** there's a small shape. It is a readout, not
+a button you have to press to make things happen &mdash; **Confirm always drives
+the ceremony forward.** The shape just says where forward goes.
 
-| Shape | Meaning |
+| Shape | The next Confirm will&hellip; |
 |---|---|
-| &infin; infinity | next spin is a plain even chance |
-| &bull; filled dot | person 1 of the run |
-| &#9474; vertical bar | person 2 |
-| &#9651; triangle | person 3 |
-| &#9633; square | person 4 |
-| pentagon, hexagon&hellip; | person 5, 6&hellip; |
+| &bull; filled dot | move to person 1 of the queue |
+| &#9474; vertical bar | move to person 2 |
+| &#9651; triangle | move to person 3 |
+| &#9633; square | person 4, then pentagon, hexagon&hellip; |
+| &infin; infinity | just record a random spin; the group continues |
+| &#10005; cross | record, then **end the group and celebrate** |
 
-The number of sides is the position. A dot is a one-sided figure, a bar is a
-two-sided one, then it becomes real polygons. Past ten sides they all look like
-circles, so a centre dot appears — by then it just means "deep in a long run".
+The number of sides is the position. A dot is one-sided, a bar two-sided, then
+real polygons. Past ten they all look like circles, so a centre dot appears.
+
+So an uninterrupted queue of three runs like this, with nothing to tap:
+
+```
+●  A spins  ▍  Confirm  B spins  △  Confirm  C spins  ✗  Confirm  →  celebration
+```
+
+The cross appears once, on the last queued person, and Confirm does the rest.
+
+**Tapping the shape changes what Confirm will do:**
+
+- **shape &rarr; &infin;** &mdash; hold the queue. Next spin is random and your
+  place is kept.
+- **&infin; &rarr; shape** &mdash; resume where you left off.
+- **&infin; &rarr; &#10005;** &mdash; when there's no queue left, this says "end
+  after the next Confirm". With nothing on screen to confirm, it celebrates
+  straight away.
+- **&#10005; &rarr; &infin;** &mdash; "not yet". This is how you carry on past
+  the last queued person and add more people to the celebration.
 
 It reads as decoration. "3 of 4" would get spotted in a second by a room of
-adults who are already suspicious; a small triangle does not. It's only on the
-ready screen, between people, which is when you need it.
+adults who are already suspicious; a small triangle does not.
 
-### The finish
+### The finish — celebrate any group, any time
 
-When a queued run reaches its last person, you get a **"Welcome to your houses"**
-screen listing everyone from that run with their house colour and logo, and a
-bigger confetti burst. It's the group moment at the end of the individual ones.
+**"Welcome to your houses"** lists everyone in the group with their house colour
+and logo, plus a bigger confetti burst.
 
-It only appears when you'd actually defined a queue. Walk-up even-chance spins
-never trigger it, because there's no run to close — which means the summary
-doubles as your signal that the queue is finished and spins are back to even.
+A **group** is simply everyone sorted since the last celebration. It does not
+need a queue. Sort eight walk-ups, tap &infin; to turn it into &#10005;, and
+they all get celebrated together. That's the same button doing double duty.
 
-Tap **Done** and you're back to the ready screen. Walk-up spins never appear in
-a run's summary, whether they happened before the run or in the middle of it.
+With a queue, the group closes automatically when the last queued person is
+confirmed. Without one, you decide when it ends.
+
+The list scales with headcount: one column normally, two past seven people, and
+tighter rows past fourteen, so a big group still fits on one screen.
+
+Tap **Done** to return to the ready screen. Everyone after that belongs to the
+next group.
 
 ### Tap the shape to hold the queue
 
@@ -609,6 +632,12 @@ It also lets you add someone to the tally at the end. If C is the last queued
 person and you want D in the group photo, tap the shape *while C's result is
 still on screen*, then Confirm. The celebration is held back. Sort D, then tap
 the shape once more — that closes the run and celebrates A, B, C and D together.
+
+**The cross is how you finish.** Once everyone in the queue has gone, the shape
+becomes &#10005;. Keep adding walk-ups as long as you like &mdash; they all join
+the celebration &mdash; then tap the &#10005; to close the run out. If someone's
+result is still on screen when you tap it, the celebration waits for you to press
+Confirm and includes them.
 
 The hold is sticky, not one-shot, so you can take two walk-ups in a row without
 re-tapping. And tapping it produces no message on screen — the shape changing is
