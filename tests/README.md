@@ -45,6 +45,8 @@ Paths are relative to this folder, so the whole repo can live anywhere.
 | `test_pending.js` | The live sequence that once lost a person mid-ceremony |
 | `test_xglyph.js` | The cross state and its guards |
 | `test_confirm.js` | Confirm-driven endings, groups without a queue, layout scaling |
+| `test_noshow.js` | The 28 July live failure: a no-show leaving a forced set entry at the front of the queue |
+| `test_ticks.js` | Ticked-but-not-added guard. Clicks real toggles and real buttons; asserts no warning text names a house |
 
 ## Writing a new suite
 
@@ -59,6 +61,18 @@ Three requirements, each of which has burned us:
 3. **Print at least one line containing `PASS`.** `run_tests.sh` treats a suite
    with no assertions as a failure, because an earlier runner only grepped for
    `***` and so reported crashed suites as green.
+4. **Press buttons, don't call functions.** Every suite before `test_ticks.js`
+   called `addPool()` / `addFree()` directly, so none of them could ever catch an
+   operator who never called them. The 28 July failure lived in that gap. Inline
+   `onclick=""` attributes are not compiled under `runScripts:'outside-only'`, so
+   press a markup button by running its attribute in the page context:
+
+   ```js
+   const press=(fn)=>vm.runInContext(btn(fn).getAttribute('onclick'), ctx);
+   ```
+
+   Toggles are different — they get `el.onclick = fn` assigned in JS, so
+   `el.onclick()` works directly.
 
 `const` declarations at the top level of a classic script don't become `window`
 properties, so suites append an export shim:

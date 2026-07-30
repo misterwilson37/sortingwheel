@@ -5,7 +5,8 @@
 fail=0
 cd "$(dirname "$0")"
 for f in test_v16.js test_extra.js test_counts.js test_retry.js test_anim.js \
-         test_fac2.js test_summary.js test_glyph.js test_hold.js test_pending.js test_xglyph.js test_confirm.js; do
+         test_fac2.js test_summary.js test_glyph.js test_hold.js test_pending.js test_xglyph.js test_confirm.js \
+         test_noshow.js test_ticks.js; do
   out=$(node "$f" 2>&1); code=$?
   marks=$(printf '%s' "$out" | grep -c '\*\*\*')
   passes=$(printf '%s' "$out" | grep -c 'PASS\|OK\|resolved')
