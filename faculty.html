@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sorting Wheel — Faculty v2.6.1</title>
+<title>Sorting Wheel — Faculty v2.7.0</title>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="sorting-wheel.css">
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -152,7 +152,7 @@
         If you click two houses, it will spin for two people.
       </p>
       <div class="house-toggles" id="poolToggles"></div>
-      <button class="btn btn-outline" style="font-size:12px; padding:6px 12px;" onclick="addPool()">Add as a set</button>
+      <button class="btn btn-gold" style="font-size:12px; padding:6px 12px;" onclick="addPool()">Add as a set</button>
     </div>
 
     <div class="setup-section" style="margin-bottom:16px;">
@@ -162,7 +162,7 @@
         for a plain even spin.
       </p>
       <div class="house-toggles" id="excludeToggles"></div>
-      <button class="btn btn-outline" style="font-size:12px; padding:6px 12px;" onclick="addFree()">Add open spin</button>
+      <button class="btn btn-gold" style="font-size:12px; padding:6px 12px;" onclick="addFree()">Add open spin</button>
     </div>
 
     <div class="setup-section" style="margin-bottom:16px;">
@@ -189,7 +189,13 @@
       </p>
     </div>
 
-    <button class="btn btn-gold" style="width:100%;" onclick="closeQueue()">Done</button>
+    <!-- Ticked-but-not-added guard (2.7.0). Names the SECTION, never a house.
+         Nothing in here may mention a house name, a probability, or the word
+         guaranteed — the modal sits at arm's length from the person being
+         sorted and the mechanism has to stay illegible. test_ticks.js asserts
+         that no house name appears in this text. -->
+    <p id="unaddedNote" class="unadded-note"></p>
+    <button class="btn btn-outline" style="width:100%;" onclick="closeQueue()">Done</button>
   </div>
 </div>
 
@@ -210,6 +216,15 @@
   background: var(--bg-card); border: 1px solid rgba(201,168,76,0.15); font-size: 13px;
 }
 .queue-item.done { opacity: 0.4; }
+
+/* Ticked-but-not-added guard. Deliberately says nothing about houses. */
+.unadded-note {
+  display: none; padding: 9px 12px; border-radius: 8px; margin: 0 0 10px;
+  font-size: 12px; line-height: 1.55;
+  background: rgba(214,90,70,0.12); border: 1px solid rgba(214,90,70,0.55);
+  color: var(--text-primary);
+}
+.unadded-note.visible { display: block; }
 .queue-num {
   width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
@@ -272,7 +287,7 @@
 <script>
 // ============================================================
 //  SORTING WHEEL — FACULTY CEREMONY
-//  faculty.html v2.6.1
+//  faculty.html v2.7.0
 // ============================================================
 //  A separate page for spinning new staff into houses.
 //
@@ -298,7 +313,7 @@
 //  queue modal only.
 // ============================================================
 
-const FACULTY_VERSION = '2.6.1';
+const FACULTY_VERSION = '2.7.0';
 const $ = id => document.getElementById(id);
 const show = (el) => { if (typeof el === 'string') el = $(el); el.classList.add('active','visible'); };
 const hide = (el) => { if (typeof el === 'string') el = $(el); el.classList.remove('active','visible'); };
@@ -861,12 +876,56 @@ function updateQueueGlyph() {
 // ------------------------------------------------------------
 //  Queue modal
 // ------------------------------------------------------------
+let queueCloseArmed = false;
 let poolPicks = new Set();
 let excludePicks = new Set();
 let poolCounter = 0;
 
-function openQueue() { buildToggles(); renderQueue(); $('queueModal').style.display = 'block'; }
-function closeQueue() { $('queueModal').style.display = 'none'; }
+function openQueue() {
+  queueCloseArmed = false;
+  buildToggles(); renderQueue();
+  const note = $('unaddedNote'); if (note) note.classList.remove('visible');
+  $('queueModal').style.display = 'block';
+}
+
+// Unconditional close. Used by finishRunNow(), which must never be blocked by
+// the speed bump below — a summary appearing behind a stuck modal would be a
+// worse bug than the one this guards against.
+function hideQueueModal() {
+  queueCloseArmed = false;
+  poolPicks.clear(); excludePicks.clear();
+  const note = $('unaddedNote'); if (note) note.classList.remove('visible');
+  buildToggles();
+  $('queueModal').style.display = 'none';
+}
+
+// closeQueue used to be one line: hide the modal. Ticking a house does NOT queue
+// anything — "Add as a set" / "Add open spin" do — but the ticks stayed lit
+// afterwards, so a modal closed via the big gold Done button looked exactly like
+// a configured spin and wasn't one. On 28 July that put a live spin onto a
+// leftover queue entry and produced the one house that had just been ruled out.
+//
+// One speed bump, never a trap: the first Done with unadded ticks explains
+// itself and stays open, a second Done closes and discards the ticks so a stale
+// "on" can't masquerade as a live setting later.
+function closeQueue() {
+  const held = [];
+  if (poolPicks.size) held.push('Fixed set');
+  if (excludePicks.size) held.push('Open spin');
+  const note = $('unaddedNote');
+  if (held.length && !queueCloseArmed && note) {
+    queueCloseArmed = true;
+    note.textContent = held.length === 1
+      ? `Houses are ticked under "${held[0]}" but nothing has been added to the queue yet. `
+        + `Press the gold button in that section, or untick them. Press Done again to discard.`
+      : `Houses are ticked under "${held[0]}" and "${held[1]}" but nothing has been added to the `
+        + `queue yet. Press the gold button in those sections, or untick them. `
+        + `Press Done again to discard.`;
+    note.classList.add('visible');
+    return;
+  }
+  hideQueueModal();
+}
 
 function buildToggles() {
   const mk = (containerId, picks, onToggle) => {
@@ -886,10 +945,12 @@ function buildToggles() {
   };
   mk('poolToggles', poolPicks, i => {
     poolPicks.has(i) ? poolPicks.delete(i) : poolPicks.add(i);
+    queueCloseArmed = false;   // any change earns a fresh speed bump
     buildToggles();
   });
   mk('excludeToggles', excludePicks, i => {
     excludePicks.has(i) ? excludePicks.delete(i) : excludePicks.add(i);
+    queueCloseArmed = false;
     buildToggles();
   });
   const n = state.houses.length || 4;
@@ -911,6 +972,7 @@ function addPool() {
   state.pools[id] = members.slice();
   members.forEach(() => state.steps.push({ kind: 'pool', poolId: id }));
   poolPicks.clear();
+  queueCloseArmed = false;
   buildToggles(); renderQueue();
 }
 
@@ -920,6 +982,7 @@ function addFree() {
   beginRunIfNeeded();
   state.steps.push({ kind: 'free', excluded });
   excludePicks.clear();
+  queueCloseArmed = false;
   buildToggles(); renderQueue();
 }
 
@@ -971,7 +1034,7 @@ function finishRunNow() {
   const had = state.results.some(r => r.groupId === state.groupId);
   if (!had) return;
   closeRun();
-  closeQueue();
+  hideQueueModal();   // bypass the ticked-but-not-added speed bump
   renderQueue();
   if (had) showSummary();
   else setCeremonyPhase('ready');
