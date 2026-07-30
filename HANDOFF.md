@@ -3,9 +3,9 @@
 Technical notes for whoever picks this up next, human or Claude.
 Operational instructions live in `README.md`; this file is the code map.
 
-**Handoff version:** 1.14.0
-**App version at handoff:** `index.html` 1.9.1, `faculty.html` 2.6.1, `animations.js` 1.3.0, `sorting-wheel.css` 1.3.1, `ellis.html` 1.2.0
-**Session:** Round 3 of documented work. Claude instance name: **Vernier**
+**Handoff version:** 1.15.0
+**App version at handoff:** `index.html` 1.9.1, `faculty.html` 2.7.0, `animations.js` 1.3.0, `sorting-wheel.css` 1.3.1, `ellis.html` 1.2.0
+**Session:** Rounds 3-4 of documented work. Claude instance name: **Vernier**
 — the scale that lets you read the fine gradations between the marks, which was
 the assignment. Predecessors: Trilby (this project), Fable and Stedman (other
 Jake projects). Do not reuse.
@@ -22,6 +22,12 @@ live deployment defect was found and fixed (a duplicated stylesheet — see
 "The duplicated stylesheet" below), two latent bugs were fixed in
 `animations.js`, and several claims in this file were found stale or
 self-contradictory and have been corrected.
+
+**Round 4** followed the first live faculty ceremony failure. Jake supplied the
+`tests/` suites, which had existed on his machine all along. See "The ticked
+house that wasn't a queue entry" — and read "The stealth constraint" before
+proposing any fix to the faculty page, because the first attempt at one was
+rejected for good reason.
 
 ---
 
@@ -248,9 +254,9 @@ deliberate and it is the only such case; don't "fix" it by half-moving it.
 `test_anim.js` loads `index.html` + `animations.js` in jsdom, stubs Firebase and
 canvas, then **invokes all eight animations and awaits each Promise.** Also runs a
 two-house config to confirm nothing assumes four. `test_faculty.js` does the same
-against `faculty.html`'s DOM. (Neither file is currently in the repo — see "Test
-suites" above.) Round 3 reproduced this check ad hoc across `index.html` and
-`faculty.html` at 2, 4 and 5 houses; all eight resolve on both pages.
+against `faculty.html`'s DOM. Round 3 reproduced this check ad hoc across
+`index.html` and `faculty.html` at 2, 4 and 5 houses; all eight resolve on both
+pages.
 
 **Collapse the timers, don't wait them out.** The animations are several seconds
 each, so a suite that runs them honestly takes minutes. Overriding
@@ -295,16 +301,16 @@ Deliberate differences, all invisible during the ceremony:
 
 ## Test suites — and a warning about the runner
 
-**Status as of 1.14.0: there is no `tests/` directory in the repository.** This
-section and the "Testing" section near the bottom of this file used to
-contradict each other outright — one described a suite in detail, the other said
-"there is no test suite" — and the repo contained neither. Whether the suites
-were never committed, were deleted, or live only on Jake's machine is unknown;
-ask him before recreating them from scratch. Everything below is preserved
-because the *lesson* is still worth having, and because it is the spec if you
-rebuild them.
+**Status as of 1.15.0: the suites exist and are in the repo.** Round 3 reported
+them missing, because they were on Jake's machine and had never been committed;
+he uploaded them in round 4. Fourteen suites live in `tests/`, run with
+`bash tests/run_tests.sh` (the file may lose its executable bit through a GitHub
+web upload, so prefer `bash`). `tests/` is not deployed and does not need
+uploading for the app to work.
 
-If they exist, suites live in `tests/` and are run with `tests/run_tests.sh`.
+A green board is not a safe board. Every suite passed immediately before the
+28 July live failure, because no suite pressed a button — see rule 4 in
+`tests/README.md`.
 
 **The runner checks exit code, `***` markers, output length, and that at least
 one assertion actually printed.** All four matter. An earlier runner only grepped
@@ -483,6 +489,76 @@ constant; final card always the target; each house appearing exactly 8 times.
 **Two houses is the one case that cannot be fully satisfied** — with only two
 cards the two constraints conflict about half the time and one repeat survives,
 which is inherent rather than a bug. A two-house roller is a-b-a-b regardless.
+
+## The ticked house that wasn't a queue entry (faculty 2.7.0)
+
+**The first live faculty failure.** A three-person set was queued and two people
+ran. The third didn't show. A replacement was to get "any house except Vevaios".
+She got Vevaios. A retry gave Vevaios again.
+
+There are two ways to arrive at that outcome and they share the same ending.
+
+**Route 1 — adding behind an unrun entry.** `addPool` / `addFree` append. They do
+not start a new queue; `beginRunIfNeeded()` only resets the cursor when the queue
+is *already empty*. So a new entry added while the no-show's slot is still unrun
+sits at the BACK of the line, and the next spin resolves the abandoned set entry.
+A set with one house left is a forced draw, not a weighted one, so the outcome is
+100% determined — and `cancelSort` returns the house to the set, so **Re-sort
+cannot escape it.** Luck-free repro, against the shipped code: a set containing
+only Vevaios, then an open spin excluding Vevaios, one spin. Vevaios 300/300.
+
+**Route 2 — never adding at all, which is what actually happened.** Ticking a
+house does nothing but tick it. `closeQueue()` used to be one line — hide the
+modal — and it neither cleared the ticks nor warned. Worse, the queueing action
+(`Add open spin`) was a 12px outline button mid-panel while `Done`, which only
+closes the window, was full-width `btn-gold`. Tick the house, press the big gold
+button, and you have closed a modal that looks configured and is not. The ticks
+stay lit afterwards, so reopening reinforces the belief.
+
+Route 2 is the better explanation because it accounts for the detail Route 1
+can't: it happened on a brand-new machine on first use, and could not be
+reproduced on the laptop where all the testing was done. Muscle memory. On the
+laptop you press the right button without thinking.
+
+Both routes need an unfinished queue to produce the *guaranteed* symptom. With
+the set finished there is no leftover entry, the queue falls through to `null`,
+and the spin is an honest even 4-way — measured 28% Vevaios, not 100%.
+
+**Fixed in 2.7.0**, without changing the draw at all:
+
+- The add buttons became `btn-gold`; `Done` became `btn-outline`. Prevents the
+  slip rather than catching it, and adds no text to the screen.
+- `closeQueue()` gained one speed bump: the first `Done` with unadded ticks stays
+  open and explains itself; a second `Done` closes and discards the ticks so a
+  stale "on" can't masquerade as a live setting. `finishRunNow()` calls the new
+  `hideQueueModal()` instead, because a summary stuck behind a blocked modal
+  would be worse than the bug being guarded.
+- Route 1 was left alone. It is real, and `tests/test_noshow.js` pins it, but the
+  existing escape hatches work (verified 200 trials each: "Clear queue" and the
+  per-entry "Remove" both give a correct exclusion afterwards) and every fix for
+  it either leaks the mechanism or silently discards somebody's reserved house.
+
+## The stealth constraint
+
+**Read this before improving any faculty-page message.** The first fix proposed
+in round 4 was a "Next spin will be" readout at the top of the queue modal,
+which in the failing state said: *"GUARANTEED Vevaios — it is the only house left
+in that set, so this spin has no randomness in it."*
+
+Jake rejected it, correctly. That box is the rigging in plain English, on a
+laptop screen, at arm's length from the person being sorted. It would have been a
+worse failure than the one it fixed. The THIRD INVARIANT is not only about the
+student app: **the faculty mechanism must stay illegible even to someone reading
+over the operator's shoulder.**
+
+The rule that came out of it: a warning may name a *section of the UI*, a
+*button*, or a *position in the queue*. It may never name a house, quote a
+probability, or use the word "guaranteed". The 2.7.0 note therefore says
+*"Houses are ticked under 'Open spin' but nothing has been added to the queue
+yet"* — enough to act on, nothing to overhear.
+`tests/test_ticks.js` section 4 asserts this mechanically: it fails if any house
+name, any percentage, or the word "guarantee" appears in that text. Do not
+"improve" your way past it.
 
 ## A process failure worth not repeating
 
@@ -884,8 +960,7 @@ station propagates to the others on their next student. It deliberately does
 
 Test harness: `test_v16.js` and `test_extra.js`. They load `index.html` in
 jsdom, stub Firebase, and export the lexically-scoped `state` via an appended
-`globalThis.state = state`. Neither is in the repo; recreate them from the
-snippets in "Testing" below if you need them.
+`globalThis.state = state`. Both are in `tests/`.
 
 ### Re-verified independently in round 3
 
@@ -1032,9 +1107,8 @@ operators refresh at a natural gap rather than mid-line.
 
 ## Testing
 
-There is no `tests/` directory in the repo — see "Test suites" above for the
-contradiction this used to create. Verification is currently ad hoc. The
-round 1-2 baseline was:
+Suites live in `tests/`; run them with `bash tests/run_tests.sh`. The round 1-2
+baseline was:
 
 ```bash
 # Extract and syntax-check the inline JS
