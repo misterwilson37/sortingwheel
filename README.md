@@ -35,17 +35,18 @@ GitHub and check its size before trying again.
 |---|---|---|
 | `index.html` | 1.9.1 | The student sorting app. HTML + JS; CSS and animations are now external (see below). No build step. |
 | `ellis.html` | 1.2.0 | Redirect page. Forwards to `index.html?sheet=<Ellis sheet ID>` so staff only have to remember one short URL. |
-| `faculty.html` | 2.6.1 | Separate ceremony for spinning **faculty** into houses. Visually identical to the student one. Never touches student counts or the Roster. See §10. |
+| `faculty.html` | 2.7.0 | Separate ceremony for spinning **faculty** into houses. Visually identical to the student one. Never touches student counts or the Roster. See §10. |
 | `animations.js` | 1.3.0 | The eight ceremony animations, shared by `index.html` and `faculty.html`. |
 | `sorting-wheel.css` | 1.3.1 | The whole stylesheet, shared by both pages. One file so the two ceremonies cannot drift apart visually. |
 | `config.js` | — | Firebase project keys (`categorizingcougar`). Safe to be public; Firebase web config is designed to be. |
 | `CNAME` | — | GitHub Pages custom domain: `sortingwheel.misterwilson.org` |
-| `README.md` | 1.15.0 | This file. |
+| `README.md` | 1.16.0 | This file. |
 
-There is **no `tests/` folder** in the repo, despite earlier versions of this
-table listing one. If you find test scripts on a machine somewhere they belong
-here; nothing in the app depends on them and nothing needs uploading.
-| `HANDOFF.md` | 1.14.0 | Technical notes for the next developer / Claude session. |
+`tests/` holds fourteen jsdom suites. **Nothing in there needs uploading** for
+the app to work — it's for checking changes before you deploy them. Run with
+`bash tests/run_tests.sh` (use `bash`, since a GitHub web upload can strip the
+executable bit).
+| `HANDOFF.md` | 1.15.0 | Technical notes for the next developer / Claude session. |
 
 Deployment is GitHub Pages. Upload the changed file through the GitHub web UI
 and it is live in about a minute. There is no build, no CLI, no bundler.
@@ -532,6 +533,16 @@ list is the source of truth and the mirror keeps up with it automatically.
   animations 1.3.0, and other animations have only ever been eyeballed at four.
   Adding a fifth house is not just a spreadsheet change — spin every animation
   once before using it with students.
+- **A queue entry is not created by ticking a house.** Ticking only ticks; the
+  gold button in that section is what adds it to the queue. As of 2.7.0 the
+  first press of **Done** with houses still ticked will stop and say so rather
+  than closing.
+- **If somebody doesn't show up, press "Clear queue" before adding their
+  replacement.** Adding a new entry puts it at the *back* of the queue — it does
+  not start a new one — so the no-show's unrun slot still goes next. And the last
+  slot of a set has only one house left in it, which means no randomness at all.
+  Nobody already sorted is lost by clearing; they stay in the group and are still
+  celebrated together.
 - In Even Target mode, a house that has reached its target shows **0.0%** if you
   have "Show Probabilities" open. That is correct — it's how the day lands
   exactly even — but it does mean the last handful of students are effectively
